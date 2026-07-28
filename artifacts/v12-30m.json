@@ -1,0 +1,26 @@
+{
+  "suite": "V-12",
+  "passed": true,
+  "minutes": 30,
+  "samples": 1778,
+  "idleAndFakeServiceMaxRssMiB": 77.83,
+  "browserTabJsHeapMaxMiB": 9.54,
+  "sustainedCpuPercent": 0.04,
+  "elapsedMs": 1800131.02,
+  "eventLoopLagMaxMs": 9.42,
+  "openFiles": 46,
+  "swapGrowthMiB": 0,
+  "degradedMode": {
+    "degraded": true,
+    "reason": "Resource pressure: red; RSS 44 MiB; event-loop lag 300.0 ms",
+    "serializeAgents": true,
+    "admitHeavyWork": false,
+    "lastSample": {
+      "rssBytes": 46546944,
+      "memoryPressure": "red",
+      "eventLoopLagMs": 300
+    }
+  },
+  "silentKills": 0,
+  "modelStarts": 0
+}

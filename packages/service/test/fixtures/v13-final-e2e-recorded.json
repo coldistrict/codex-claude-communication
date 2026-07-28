@@ -1,0 +1,198 @@
+{
+  "description": "Recorded from the final V-13 collab E2E durable state (run_a5736f95-421e-4ef4-b6c7-0b325333d0c6): six per-burst usage rows plus the durably recorded Goal Packet, Codex opening value (reconstructed exactly as openingValue() reconstructs it on resume), candidate manifest and digests. Used to re-verify the overhead ratio under the real-burst-v2 attribution; the artifact itself was measured under real-burst-v1 and is never modified.",
+  "goal": {
+    "authority": {
+      "network": "off",
+      "permissionPreset": "default",
+      "writableRoots": [
+        "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-MdOi8j/workspace"
+      ]
+    },
+    "completionEvidence": [
+      "canary-output.txt has SHA-256 c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd.",
+      "Both providers sign the same manifest."
+    ],
+    "constraints": [
+      "No network access.",
+      "No dependency installation.",
+      "No destructive commands.",
+      "Only the temporary canary workspace may be changed."
+    ],
+    "createdAt": "2026-07-26T16:16:04.255Z",
+    "digest": "c5cd2281aa31ae4116effaaf50a23b1659eabde26dde6a9bec09d31207105c33",
+    "goal": "Create canary-output.txt containing exactly the UTF-8 bytes \"collaboration canary passed.\" with no trailing newline. Verify its exact contents and reach shared consensus.",
+    "id": "goal_a65b2f70-77e1-4ff4-9547-00b58c06590b",
+    "runId": "run_a5736f95-421e-4ef4-b6c7-0b325333d0c6",
+    "usefulWorkBudget": {
+      "perMaterialChallenge": 2,
+      "perProvider": 8
+    },
+    "workspace": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-MdOi8j/workspace"
+  },
+  "codexOpeningValue": {
+    "rationale": "The workspace is empty, so the goal is not yet complete. The required payload is 28 UTF-8/ASCII bytes and independently hashes to the stated SHA-256. Completion requires creating canary-output.txt with those exact bytes, verifying its byte count and digest, and having both providers sign one identical manifest.",
+    "evidence": [
+      "The workspace contains no files.",
+      "canary-output.txt does not currently exist.",
+      "The exact no-newline payload \"collaboration canary passed.\" is 28 bytes.",
+      "The independently computed SHA-256 is c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd, matching the Goal Packet.",
+      "The workspace is not a Git repository."
+    ],
+    "risks": [
+      "Appending a trailing newline would change the required bytes and digest.",
+      "The opening explicitly forbids mutation, so file creation must occur in a later collaboration phase.",
+      "Shared consensus remains incomplete until both providers sign the same manifest; no manifest or signing format currently exists in the workspace.",
+      "All later writes must remain confined to the specified temporary workspace."
+    ]
+  },
+  "manifest": {
+    "artifacts": [
+      {
+        "mediaType": "text/plain; charset=utf-8",
+        "path": "canary-output.txt",
+        "sha256": "c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd"
+      }
+    ],
+    "evidenceLedger": [
+      "canary-output.txt exists at /private/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-MdOi8j/workspace/canary-output.txt, the sole declared writable root; mode 0644, regular file, link count 1.",
+      "File length is exactly 28 bytes, confirmed independently by `wc -c` and by python3 len() on the raw byte read.",
+      "Full byte sequence is 636f6c6c61626f726174696f6e2063616e617279207061737365642e; the terminal byte checked in isolation via `tail -c 1 | xxd` is 0x2e ('.') with no trailing 0x0a.",
+      "SHA-256 is c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd, reproduced by three independent implementations (shasum -a 256, sha256sum, python3 hashlib) that all agree, and matching the immutable Goal Packet completionEvidence.",
+      "Byte-exact equality against a freshly generated reference confirmed via `cmp -s canary-output.txt <(printf %s 'collaboration canary passed.')`, which exited 0.",
+      "Bytes decode cleanly as UTF-8 and compare equal to the literal expected string; python3 reports endswith_newline=False and decodes_utf8=True, substantiating the charset=utf-8 half of the declared mediaType that `file --mime-type` alone could not establish.",
+      "Recursive enumeration without a type filter (`find . -mindepth 1 -maxdepth 2 -print`) returns only ./canary-output.txt, establishing that the workspace contains no additional files, directories, symlinks, or hidden entries.",
+      "In the pre-write inspection this lane recorded the workspace as empty, so the artifact was created fresh with no overwrite of pre-existing content.",
+      "The sibling directory ../state/ lies outside writableRoots and still holds only the orchestrator's own events.sqlite plus its -shm/-wal companions; neither provider lane wrote to it. No destructive command was executed by this lane.",
+      "This verification lane performed read-only operations exclusively; the artifact was already byte-correct on arrival, so no corrective mutation was applied."
+    ],
+    "goalDigest": "c5cd2281aa31ae4116effaaf50a23b1659eabde26dde6a9bec09d31207105c33",
+    "knownLimitations": [
+      "This lane cannot observe the peer provider's post-write signature; final co-signing of this exact Outcome Manifest must be confirmed by the two-provider orchestration layer.",
+      "The Goal Packet's own digest field (c5cd2281aa31ae4116effaaf50a23b1659eabde26dde6a9bec09d31207105c33) could not be independently recomputed because the canonicalization scheme used to produce it is not specified. Impact is low: the goal text and the completionEvidence hash independently corroborate each other, and both were verified against the artifact.",
+      "Verification reflects the workspace state at observation time. The artifact lives under a per-user macOS temp root that the OS may reap, so a signature is only as current as the last recomputation; the digest should be re-derived immediately before final co-signing if significant time elapses.",
+      "The peer's reported command set was validated by re-derivation, not by replaying its exact process; one peer command form (comparing against a reference file written outside the workspace) is not reproducible under this sandbox, since the bounded canary denies writes outside writableRoots. The equivalent process-substitution form was used instead and passed."
+    ],
+    "runId": "run_a5736f95-421e-4ef4-b6c7-0b325333d0c6",
+    "unresolvedNonMaterial": [
+      "`ls -ld .` reports a directory link count of 3, which conventionally implies one subdirectory, yet recursive enumeration finds none. Almost certainly an APFS/extended-attribute accounting artifact rather than a hidden entry; it does not affect the artifact bytes or digest.",
+      "com.apple.provenance extended attributes are present on both the workspace directory and the artifact. These are OS-applied metadata, are not part of file content, and are excluded from the SHA-256.",
+      "The peer's evidence string for `cmp -s` (\"exact byte comparison: PASS\") is a paraphrase rather than literal command output, since `cmp -s` produces no stdout. The underlying claim was independently confirmed true.",
+      "The peer artifact declares mediaType `text/plain; charset=utf-8` while its cited `file -b --mime-type` command returns only `text/plain`. The declaration is correct but was under-evidenced; this lane substantiated the charset component separately.",
+      "The orchestrator's events.sqlite-wal under ../state/ shows a later mtime than the run start, consistent with the harness recording its own events. It is outside writableRoots and was not modified by any provider tool call."
+    ],
+    "verification": [
+      {
+        "command": "shasum -a 256 canary-output.txt",
+        "evidence": "c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd  canary-output.txt",
+        "outcome": "passed"
+      },
+      {
+        "command": "sha256sum canary-output.txt",
+        "evidence": "c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd  canary-output.txt (independent implementation, agrees with shasum)",
+        "outcome": "passed"
+      },
+      {
+        "command": "python3 -c \"import hashlib,pathlib; b=pathlib.Path('canary-output.txt').read_bytes(); print(len(b), hashlib.sha256(b).hexdigest(), b.endswith(b'\\n'), b.decode('utf-8')=='collaboration canary passed.')\"",
+        "evidence": "len 28 / sha256 c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd / endswith_newline False / decodes_utf8 True",
+        "outcome": "passed"
+      },
+      {
+        "command": "wc -c < canary-output.txt",
+        "evidence": "28",
+        "outcome": "passed"
+      },
+      {
+        "command": "xxd -p canary-output.txt",
+        "evidence": "636f6c6c61626f726174696f6e2063616e617279207061737365642e",
+        "outcome": "passed"
+      },
+      {
+        "command": "tail -c 1 canary-output.txt | xxd",
+        "evidence": "00000000: 2e  .   (terminal byte is 0x2e, not 0x0a — no trailing newline)",
+        "outcome": "passed"
+      },
+      {
+        "command": "cmp -s canary-output.txt <(printf %s 'collaboration canary passed.') && echo CMP=EXACT_MATCH || echo CMP=DIFFER",
+        "evidence": "CMP=EXACT_MATCH (cmp -s is silent; exit status 0 is the actual signal)",
+        "outcome": "passed"
+      },
+      {
+        "command": "find . -mindepth 1 -maxdepth 2 -print",
+        "evidence": "./canary-output.txt — sole entry; run without -type f so directories, symlinks and hidden entries are also covered, unlike the peer's -type f formulation",
+        "outcome": "passed"
+      },
+      {
+        "command": "ls -la && ls -ldi . && stat -f '%N type=%HT links=%l size=%z' canary-output.txt",
+        "evidence": "-rw-r--r--@ 1 coldistric staff 28 canary-output.txt; canary-output.txt type=Regular File links=1 size=28",
+        "outcome": "passed"
+      },
+      {
+        "command": "file -b --mime-type canary-output.txt",
+        "evidence": "text/plain (note: establishes type only, not charset; charset=utf-8 substantiated separately by the python3 decode check)",
+        "outcome": "passed"
+      },
+      {
+        "command": "xattr -l canary-output.txt && xattr -l .",
+        "evidence": "com.apple.provenance on both file and directory; extended attributes are not file content and do not affect the byte sequence or digest",
+        "outcome": "passed"
+      },
+      {
+        "command": "ls -la ../state/",
+        "evidence": "events.sqlite, events.sqlite-shm, events.sqlite-wal only — orchestrator state outside writableRoots, not written by either provider lane",
+        "outcome": "passed"
+      }
+    ]
+  },
+  "manifestDigest": "32e1ef98d55fc2da4f7a4a4ac6f0b4cff2061560e054eea4637b7edee5117b0b",
+  "verificationDigest": "00a0a93020f17fe308ae94a346e135d83597a0b9fcf4142d4b99d6f9b91c9265",
+  "usage": [
+    {
+      "burstKey": "claude:opening",
+      "provider": "claude",
+      "input": 8,
+      "cachedInput": 72427,
+      "output": 4351,
+      "reasoning": 0
+    },
+    {
+      "burstKey": "claude:review",
+      "provider": "claude",
+      "input": 7,
+      "cachedInput": 95972,
+      "output": 6478,
+      "reasoning": 0
+    },
+    {
+      "burstKey": "claude:signoff",
+      "provider": "claude",
+      "input": 3,
+      "cachedInput": 51437,
+      "output": 2244,
+      "reasoning": 0
+    },
+    {
+      "burstKey": "codex:candidate",
+      "provider": "codex",
+      "input": 26224,
+      "cachedInput": 25344,
+      "output": 1466,
+      "reasoning": 1034
+    },
+    {
+      "burstKey": "codex:opening",
+      "provider": "codex",
+      "input": 21129,
+      "cachedInput": 20224,
+      "output": 329,
+      "reasoning": 91
+    },
+    {
+      "burstKey": "codex:signoff",
+      "provider": "codex",
+      "input": 30398,
+      "cachedInput": 29440,
+      "output": 581,
+      "reasoning": 442
+    }
+  ]
+}

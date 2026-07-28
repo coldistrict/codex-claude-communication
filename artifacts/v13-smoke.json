@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "kind": "collaboration_product_canary_evidence",
+  "suite": "V-13-smoke",
+  "observedAt": "2026-07-26T15:29:10.969Z",
+  "authorization": {
+    "kind": "real_canary",
+    "scope": "smoke",
+    "confirmed": true,
+    "providers": [
+      "codex",
+      "claude"
+    ],
+    "issuedAt": "2026-07-26T15:28:22Z",
+    "expiresAt": "2026-07-26T15:58:22Z"
+  },
+  "authorizationDigest": "7fde1c577adea6f7eedda13b5e693472a8d813865b4c19a1cc63ae05fc1eb5cc",
+  "result": {
+    "suite": "V-13-smoke",
+    "passed": true,
+    "failures": [],
+    "billingBefore": {
+      "codex": {
+        "provider": "codex",
+        "route": "subscription_allowance",
+        "authenticatedBy": "chatgpt",
+        "plan": "plus",
+        "proof": [
+          "account/read type=chatgpt",
+          "paid plan=plus",
+          "primary.usedPercent=58",
+          "credits.hasCredits=true",
+          "provider policy: subscription allowance is consumed before existing credits",
+          "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+        ],
+        "checkedAt": "2026-07-26T15:28:52.907Z"
+      },
+      "claude": {
+        "provider": "claude",
+        "route": "subscription_allowance",
+        "authenticatedBy": "claude.ai",
+        "plan": "max",
+        "proof": [
+          "official SDK bundled CLI auth status loggedIn=true",
+          "authMethod=claude.ai",
+          "apiProvider=firstParty",
+          "subscriptionType=max",
+          "includedUsageRemaining=true",
+          "extraUsageEnabled=false",
+          "existingCreditsRemaining=null",
+          "API-key, Console, cloud, and custom-provider routes removed",
+          "product never purchases credits or enables top-ups"
+        ],
+        "checkedAt": "2026-07-26T15:28:54.629Z"
+      }
+    },
+    "billingAfter": {
+      "codex": {
+        "provider": "codex",
+        "route": "subscription_allowance",
+        "authenticatedBy": "chatgpt",
+        "plan": "plus",
+        "proof": [
+          "account/read type=chatgpt",
+          "paid plan=plus",
+          "primary.usedPercent=58",
+          "credits.hasCredits=true",
+          "provider policy: subscription allowance is consumed before existing credits",
+          "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+        ],
+        "checkedAt": "2026-07-26T15:29:10.966Z"
+      },
+      "claude": {
+        "provider": "claude",
+        "route": "subscription_allowance",
+        "authenticatedBy": "claude.ai",
+        "plan": "max",
+        "proof": [
+          "official SDK bundled CLI auth status loggedIn=true",
+          "authMethod=claude.ai",
+          "apiProvider=firstParty",
+          "subscriptionType=max",
+          "includedUsageRemaining=true",
+          "extraUsageEnabled=false",
+          "existingCreditsRemaining=null",
+          "API-key, Console, cloud, and custom-provider routes removed",
+          "product never purchases credits or enables top-ups"
+        ],
+        "checkedAt": "2026-07-26T15:29:09.187Z"
+      }
+    },
+    "sessions": {
+      "codex": {
+        "initial": "019f9f0b-2176-7ec0-97e5-f1865f64f528",
+        "resumed": "019f9f0b-2176-7ec0-97e5-f1865f64f528",
+        "stable": true
+      },
+      "claude": {
+        "initial": "faed87ee-4cef-421c-b2dd-912b1dbb5165",
+        "resumed": "faed87ee-4cef-421c-b2dd-912b1dbb5165",
+        "stable": true
+      }
+    },
+    "usage": [
+      {
+        "provider": "claude",
+        "input": 2,
+        "cachedInput": 0,
+        "output": 41,
+        "reasoning": 0,
+        "burst": "initial",
+        "classification": "useful",
+        "attributionComplete": true,
+        "uncaused": false,
+        "nestedUsageComplete": true
+      },
+      {
+        "provider": "codex",
+        "input": 19568,
+        "cachedInput": 0,
+        "output": 29,
+        "reasoning": 0,
+        "burst": "initial",
+        "classification": "useful",
+        "attributionComplete": true,
+        "uncaused": false,
+        "nestedUsageComplete": true
+      },
+      {
+        "provider": "codex",
+        "input": 19669,
+        "cachedInput": 19200,
+        "output": 30,
+        "reasoning": 0,
+        "burst": "resume",
+        "classification": "useful",
+        "attributionComplete": true,
+        "uncaused": false,
+        "nestedUsageComplete": true
+      },
+      {
+        "provider": "claude",
+        "input": 2,
+        "cachedInput": 0,
+        "output": 40,
+        "reasoning": 0,
+        "burst": "resume",
+        "classification": "useful",
+        "attributionComplete": true,
+        "uncaused": false,
+        "nestedUsageComplete": true
+      }
+    ],
+    "overhead": {
+      "total": 58581,
+      "coordinationUpper": 0,
+      "usefulLower": 58581,
+      "ratio": 1,
+      "coverageComplete": true,
+      "uncausedInvocations": 0,
+      "passed": true,
+      "byProvider": {
+        "claude": {
+          "input": 4,
+          "cachedInput": 0,
+          "output": 81,
+          "reasoning": 0
+        },
+        "codex": {
+          "input": 39237,
+          "cachedInput": 19200,
+          "output": 59,
+          "reasoning": 0
+        }
+      }
+    },
+    "workspace": {
+      "before": {
+        "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "entries": 0
+      },
+      "after": {
+        "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "entries": 0
+      },
+      "unchanged": true
+    },
+    "workspacePath": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-smoke-qds5YN/workspace",
+    "modelAttemptsByProvider": {
+      "codex": 2,
+      "claude": 2
+    },
+    "modelStartsByProvider": {
+      "codex": 2,
+      "claude": 2
+    },
+    "modelStarts": 4,
+    "forbiddenBillingMethods": 0,
+    "noOpInvocations": 0,
+    "status": "passed",
+    "runId": "run_smoke_f5ca03aa-2493-4690-b5c4-3d2cef63cb42",
+    "canaryRoot": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-smoke-qds5YN",
+    "evidenceRepair": {
+      "reason": "The original serializer overwrote the verified workspace snapshot with workspacePath.",
+      "repairedAt": "2026-07-26T15:30:27Z",
+      "sourceEvidenceDigest": "9e74c30c923d1262bfad899253222f3259767c17831b43ef2173db6525fdae3e",
+      "postRunWorkspaceRecheckedEmpty": true
+    },
+    "codexBillingRoute": "subscription_allowance",
+    "claudeBillingRoute": "subscription_allowance"
+  },
+  "evidenceDigest": "8a7301d497640749eb5515495649b4d9906ca018426d928e928204a0d533cea5"
+}

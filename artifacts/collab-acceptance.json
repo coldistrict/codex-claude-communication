@@ -1,0 +1,863 @@
+{
+  "generatedAt": "2026-07-26T16:22:26.844Z",
+  "soakMinutes": 30,
+  "suites": [
+    {
+      "id": "V-0",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-0",
+        "passed": true,
+        "nodeMajor": 22,
+        "codexVersion": "codex-cli 0.146.0-alpha.3.1",
+        "codexSchemaSha256": "b5719e63be18118f4231ce6d2d797acd4cddeb801ea44e8aceb4b7860fe6947c",
+        "codexFeatureLines": 97,
+        "claudeSdkVersion": "0.3.220",
+        "claudeBundledCliVersion": "2.1.220",
+        "claudeBundledCliSha256": "8addc857f3fe64d5a0368af9ee50321b50afb4a6918ba3ef018ab84f5dbbe081",
+        "collabdSchemaVersion": 1,
+        "modelStarts": 0
+      },
+      "stderrTail": ""
+    },
+    {
+      "id": "build",
+      "exitCode": 0,
+      "passed": true,
+      "result": {},
+      "stderrTail": ""
+    },
+    {
+      "id": "V-1",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-1",
+        "passed": true,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80185) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-2-crash",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-2-crash",
+        "passed": true,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80236) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-2-recovery",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-2-recovery",
+        "passed": true,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80286) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-3-liveness",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-3-liveness",
+        "passed": true,
+        "wakeP95Ms": 1,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80338) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-3-leases",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-3-leases",
+        "passed": true,
+        "randomSchedules": 100,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80394) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-4",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-4",
+        "passed": true,
+        "modelStarts": 0,
+        "creditMutations": 0,
+        "creditsPresenceAllowed": true
+      },
+      "stderrTail": ""
+    },
+    {
+      "id": "V-5",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-5",
+        "passed": true,
+        "modelStartsBetweenWaits": 0,
+        "inventedResets": 0
+      },
+      "stderrTail": ""
+    },
+    {
+      "id": "V-6",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-6",
+        "passed": true,
+        "alwaysAskAllowed": 0,
+        "modelStarts": 0
+      },
+      "stderrTail": ""
+    },
+    {
+      "id": "V-7",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-7",
+        "passed": true,
+        "passRatio": 1.04,
+        "failRatio": 1.06,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80601) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-8",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-8",
+        "passed": true,
+        "challengeBudget": 4,
+        "providerBudget": 24,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80653) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-9",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-9",
+        "passed": true,
+        "unauthorizedAccepted": 0,
+        "secretLeaks": 0,
+        "forbiddenFlags": 0,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80709) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-10",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-10",
+        "passed": true,
+        "historicalMutations": 0,
+        "dryRunWrites": 0,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80762) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "service-recovery",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-13-harness",
+        "passed": true,
+        "realCanaryRun": false,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80814) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:80817) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:80815) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:80816) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:80818) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:80827) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-11",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-11",
+        "passed": true,
+        "seriousCriticalViolations": 0,
+        "keyboardComplete": true,
+        "liveRegions": 1,
+        "reflowOverflowPx": 0,
+        "eventRenderMs": 71.54,
+        "sseDuplicates": 0,
+        "restartRestored": true,
+        "modelStarts": 0
+      },
+      "stderrTail": "(node:80876) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "id": "V-12",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "V-12",
+        "passed": true,
+        "minutes": 30,
+        "samples": 1778,
+        "idleAndFakeServiceMaxRssMiB": 77.83,
+        "browserTabJsHeapMaxMiB": 9.54,
+        "sustainedCpuPercent": 0.04,
+        "elapsedMs": 1800131.02,
+        "eventLoopLagMaxMs": 9.42,
+        "openFiles": 46,
+        "swapGrowthMiB": 0,
+        "degradedMode": {
+          "degraded": true,
+          "reason": "Resource pressure: red; RSS 44 MiB; event-loop lag 300.0 ms",
+          "serializeAgents": true,
+          "admitHeavyWork": false,
+          "lastSample": {
+            "rssBytes": 46546944,
+            "memoryPressure": "red",
+            "eventLoopLagMs": 300
+          }
+        },
+        "silentKills": 0,
+        "modelStarts": 0,
+        "reusedObservedResult": true,
+        "source": "/Users/coldistric/source/repos/codex-claude-communication/product/artifacts/v12-30m.json"
+      },
+      "stderrTail": ""
+    },
+    {
+      "id": "zero-call",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "zero-call-audit",
+        "passed": true,
+        "guardedCodexTurnStarts": 1,
+        "guardedClaudeModelQueries": 1,
+        "metadataOnlyClaudeQueries": 1,
+        "forbiddenBillingCalls": 0
+      },
+      "stderrTail": ""
+    },
+    {
+      "id": "doctor",
+      "exitCode": 0,
+      "passed": true,
+      "result": {
+        "suite": "doctor",
+        "passed": true,
+        "codexReady": true,
+        "codexBillingRoute": "subscription_allowance",
+        "claudeReady": true,
+        "claudeBillingRoute": "subscription_allowance",
+        "modelStarts": 0
+      },
+      "stderrTail": ""
+    }
+  ],
+  "v13": {
+    "status": "passed",
+    "authorizationRecorded": true,
+    "modelStarts": 10,
+    "smoke": {
+      "supplied": true,
+      "source": "/Users/coldistric/source/repos/codex-claude-communication/product/artifacts/v13-smoke.json",
+      "valid": true,
+      "errors": [],
+      "evidenceDigest": "8a7301d497640749eb5515495649b4d9906ca018426d928e928204a0d533cea5",
+      "authorizationDigest": "7fde1c577adea6f7eedda13b5e693472a8d813865b4c19a1cc63ae05fc1eb5cc",
+      "result": {
+        "suite": "V-13-smoke",
+        "passed": true,
+        "failures": [],
+        "billingBefore": {
+          "codex": {
+            "provider": "codex",
+            "route": "subscription_allowance",
+            "authenticatedBy": "chatgpt",
+            "plan": "plus",
+            "proof": [
+              "account/read type=chatgpt",
+              "paid plan=plus",
+              "primary.usedPercent=58",
+              "credits.hasCredits=true",
+              "provider policy: subscription allowance is consumed before existing credits",
+              "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+            ],
+            "checkedAt": "2026-07-26T15:28:52.907Z"
+          },
+          "claude": {
+            "provider": "claude",
+            "route": "subscription_allowance",
+            "authenticatedBy": "claude.ai",
+            "plan": "max",
+            "proof": [
+              "official SDK bundled CLI auth status loggedIn=true",
+              "authMethod=claude.ai",
+              "apiProvider=firstParty",
+              "subscriptionType=max",
+              "includedUsageRemaining=true",
+              "extraUsageEnabled=false",
+              "existingCreditsRemaining=null",
+              "API-key, Console, cloud, and custom-provider routes removed",
+              "product never purchases credits or enables top-ups"
+            ],
+            "checkedAt": "2026-07-26T15:28:54.629Z"
+          }
+        },
+        "billingAfter": {
+          "codex": {
+            "provider": "codex",
+            "route": "subscription_allowance",
+            "authenticatedBy": "chatgpt",
+            "plan": "plus",
+            "proof": [
+              "account/read type=chatgpt",
+              "paid plan=plus",
+              "primary.usedPercent=58",
+              "credits.hasCredits=true",
+              "provider policy: subscription allowance is consumed before existing credits",
+              "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+            ],
+            "checkedAt": "2026-07-26T15:29:10.966Z"
+          },
+          "claude": {
+            "provider": "claude",
+            "route": "subscription_allowance",
+            "authenticatedBy": "claude.ai",
+            "plan": "max",
+            "proof": [
+              "official SDK bundled CLI auth status loggedIn=true",
+              "authMethod=claude.ai",
+              "apiProvider=firstParty",
+              "subscriptionType=max",
+              "includedUsageRemaining=true",
+              "extraUsageEnabled=false",
+              "existingCreditsRemaining=null",
+              "API-key, Console, cloud, and custom-provider routes removed",
+              "product never purchases credits or enables top-ups"
+            ],
+            "checkedAt": "2026-07-26T15:29:09.187Z"
+          }
+        },
+        "sessions": {
+          "codex": {
+            "initial": "019f9f0b-2176-7ec0-97e5-f1865f64f528",
+            "resumed": "019f9f0b-2176-7ec0-97e5-f1865f64f528",
+            "stable": true
+          },
+          "claude": {
+            "initial": "faed87ee-4cef-421c-b2dd-912b1dbb5165",
+            "resumed": "faed87ee-4cef-421c-b2dd-912b1dbb5165",
+            "stable": true
+          }
+        },
+        "usage": [
+          {
+            "provider": "claude",
+            "input": 2,
+            "cachedInput": 0,
+            "output": 41,
+            "reasoning": 0,
+            "burst": "initial",
+            "classification": "useful",
+            "attributionComplete": true,
+            "uncaused": false,
+            "nestedUsageComplete": true
+          },
+          {
+            "provider": "codex",
+            "input": 19568,
+            "cachedInput": 0,
+            "output": 29,
+            "reasoning": 0,
+            "burst": "initial",
+            "classification": "useful",
+            "attributionComplete": true,
+            "uncaused": false,
+            "nestedUsageComplete": true
+          },
+          {
+            "provider": "codex",
+            "input": 19669,
+            "cachedInput": 19200,
+            "output": 30,
+            "reasoning": 0,
+            "burst": "resume",
+            "classification": "useful",
+            "attributionComplete": true,
+            "uncaused": false,
+            "nestedUsageComplete": true
+          },
+          {
+            "provider": "claude",
+            "input": 2,
+            "cachedInput": 0,
+            "output": 40,
+            "reasoning": 0,
+            "burst": "resume",
+            "classification": "useful",
+            "attributionComplete": true,
+            "uncaused": false,
+            "nestedUsageComplete": true
+          }
+        ],
+        "overhead": {
+          "total": 58581,
+          "coordinationUpper": 0,
+          "usefulLower": 58581,
+          "ratio": 1,
+          "coverageComplete": true,
+          "uncausedInvocations": 0,
+          "passed": true,
+          "byProvider": {
+            "claude": {
+              "input": 4,
+              "cachedInput": 0,
+              "output": 81,
+              "reasoning": 0
+            },
+            "codex": {
+              "input": 39237,
+              "cachedInput": 19200,
+              "output": 59,
+              "reasoning": 0
+            }
+          }
+        },
+        "workspace": {
+          "before": {
+            "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "entries": 0
+          },
+          "after": {
+            "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "entries": 0
+          },
+          "unchanged": true
+        },
+        "workspacePath": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-smoke-qds5YN/workspace",
+        "modelAttemptsByProvider": {
+          "codex": 2,
+          "claude": 2
+        },
+        "modelStartsByProvider": {
+          "codex": 2,
+          "claude": 2
+        },
+        "modelStarts": 4,
+        "forbiddenBillingMethods": 0,
+        "noOpInvocations": 0,
+        "status": "passed",
+        "runId": "run_smoke_f5ca03aa-2493-4690-b5c4-3d2cef63cb42",
+        "canaryRoot": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-smoke-qds5YN",
+        "evidenceRepair": {
+          "reason": "The original serializer overwrote the verified workspace snapshot with workspacePath.",
+          "repairedAt": "2026-07-26T15:30:27Z",
+          "sourceEvidenceDigest": "9e74c30c923d1262bfad899253222f3259767c17831b43ef2173db6525fdae3e",
+          "postRunWorkspaceRecheckedEmpty": true
+        },
+        "codexBillingRoute": "subscription_allowance",
+        "claudeBillingRoute": "subscription_allowance"
+      }
+    },
+    "collaborationE2e": {
+      "supplied": true,
+      "source": "/Users/coldistric/source/repos/codex-claude-communication/product/artifacts/v13-collab-e2e.json",
+      "valid": true,
+      "errors": [],
+      "evidenceDigest": "6c32e2ab5ed4867c6fa069904163a7a51e9033a4b0a727247ab01cce259f98be",
+      "authorizationDigest": "6cb940e1640b517e49f468fa8e2dd04367c55ede2af58e7323a343f224cc5409",
+      "result": {
+        "suite": "V-13-collab-e2e",
+        "passed": true,
+        "status": "passed",
+        "terminalOutcome": "completed_consensus",
+        "runId": "run_a5736f95-421e-4ef4-b6c7-0b325333d0c6",
+        "workspace": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-MdOi8j/workspace",
+        "canaryRoot": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-MdOi8j",
+        "codexBillingRoute": "subscription_allowance",
+        "claudeBillingRoute": "subscription_allowance",
+        "billingBefore": {
+          "codex": {
+            "authenticatedBy": "chatgpt",
+            "checkedAt": "2026-07-26T16:16:04.907Z",
+            "plan": "plus",
+            "proof": [
+              "account/read type=chatgpt",
+              "paid plan=plus",
+              "primary.usedPercent=75",
+              "credits.hasCredits=true",
+              "provider policy: subscription allowance is consumed before existing credits",
+              "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+            ],
+            "provider": "codex",
+            "route": "subscription_allowance",
+            "usage": {
+              "existingCreditsRemaining": true,
+              "extraUsageEnabled": null,
+              "providerManagedCreditBalanceAvailable": true,
+              "providerManagedCreditBalanceChangedSincePrevious": null,
+              "providerManagedCreditsPresent": true,
+              "subscriptionUsedPercent": 75
+            }
+          },
+          "claude": {
+            "authenticatedBy": "claude.ai",
+            "checkedAt": "2026-07-26T16:16:06.455Z",
+            "plan": "max",
+            "proof": [
+              "official SDK bundled CLI auth status loggedIn=true",
+              "authMethod=claude.ai",
+              "apiProvider=firstParty",
+              "subscriptionType=max",
+              "includedUsageRemaining=true",
+              "extraUsageEnabled=false",
+              "existingCreditsRemaining=null",
+              "API-key, Console, cloud, and custom-provider routes removed",
+              "product never purchases credits or enables top-ups"
+            ],
+            "provider": "claude",
+            "route": "subscription_allowance",
+            "usage": {
+              "existingCreditsRemaining": null,
+              "extraUsageEnabled": false,
+              "providerManagedCreditBalanceAvailable": null,
+              "providerManagedCreditBalanceChangedSincePrevious": null,
+              "providerManagedCreditsPresent": null,
+              "subscriptionUsedPercent": null
+            }
+          }
+        },
+        "billingAfter": {
+          "codex": {
+            "authenticatedBy": "chatgpt",
+            "checkedAt": "2026-07-26T16:20:22.866Z",
+            "plan": "plus",
+            "proof": [
+              "account/read type=chatgpt",
+              "paid plan=plus",
+              "primary.usedPercent=75",
+              "credits.hasCredits=true",
+              "provider policy: subscription allowance is consumed before existing credits",
+              "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+            ],
+            "provider": "codex",
+            "route": "subscription_allowance",
+            "usage": {
+              "existingCreditsRemaining": true,
+              "extraUsageEnabled": null,
+              "providerManagedCreditBalanceAvailable": true,
+              "providerManagedCreditBalanceChangedSincePrevious": false,
+              "providerManagedCreditsPresent": true,
+              "subscriptionUsedPercent": 75
+            }
+          },
+          "claude": {
+            "authenticatedBy": "claude.ai",
+            "checkedAt": "2026-07-26T16:20:24.431Z",
+            "plan": "max",
+            "proof": [
+              "official SDK bundled CLI auth status loggedIn=true",
+              "authMethod=claude.ai",
+              "apiProvider=firstParty",
+              "subscriptionType=max",
+              "includedUsageRemaining=true",
+              "extraUsageEnabled=false",
+              "existingCreditsRemaining=null",
+              "API-key, Console, cloud, and custom-provider routes removed",
+              "product never purchases credits or enables top-ups"
+            ],
+            "provider": "claude",
+            "route": "subscription_allowance",
+            "usage": {
+              "existingCreditsRemaining": null,
+              "extraUsageEnabled": false,
+              "providerManagedCreditBalanceAvailable": null,
+              "providerManagedCreditBalanceChangedSincePrevious": null,
+              "providerManagedCreditsPresent": null,
+              "subscriptionUsedPercent": null
+            }
+          }
+        },
+        "billingSnapshots": {
+          "codex": [
+            {
+              "authenticatedBy": "chatgpt",
+              "checkedAt": "2026-07-26T16:16:04.907Z",
+              "plan": "plus",
+              "proof": [
+                "account/read type=chatgpt",
+                "paid plan=plus",
+                "primary.usedPercent=75",
+                "credits.hasCredits=true",
+                "provider policy: subscription allowance is consumed before existing credits",
+                "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+              ],
+              "provider": "codex",
+              "route": "subscription_allowance",
+              "usage": {
+                "existingCreditsRemaining": true,
+                "extraUsageEnabled": null,
+                "providerManagedCreditBalanceAvailable": true,
+                "providerManagedCreditBalanceChangedSincePrevious": null,
+                "providerManagedCreditsPresent": true,
+                "subscriptionUsedPercent": 75
+              }
+            },
+            {
+              "authenticatedBy": "chatgpt",
+              "checkedAt": "2026-07-26T16:17:19.356Z",
+              "plan": "plus",
+              "proof": [
+                "account/read type=chatgpt",
+                "paid plan=plus",
+                "primary.usedPercent=75",
+                "credits.hasCredits=true",
+                "provider policy: subscription allowance is consumed before existing credits",
+                "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+              ],
+              "provider": "codex",
+              "route": "subscription_allowance",
+              "usage": {
+                "existingCreditsRemaining": true,
+                "extraUsageEnabled": null,
+                "providerManagedCreditBalanceAvailable": true,
+                "providerManagedCreditBalanceChangedSincePrevious": false,
+                "providerManagedCreditsPresent": true,
+                "subscriptionUsedPercent": 75
+              }
+            },
+            {
+              "authenticatedBy": "chatgpt",
+              "checkedAt": "2026-07-26T16:20:22.866Z",
+              "plan": "plus",
+              "proof": [
+                "account/read type=chatgpt",
+                "paid plan=plus",
+                "primary.usedPercent=75",
+                "credits.hasCredits=true",
+                "provider policy: subscription allowance is consumed before existing credits",
+                "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+              ],
+              "provider": "codex",
+              "route": "subscription_allowance",
+              "usage": {
+                "existingCreditsRemaining": true,
+                "extraUsageEnabled": null,
+                "providerManagedCreditBalanceAvailable": true,
+                "providerManagedCreditBalanceChangedSincePrevious": false,
+                "providerManagedCreditsPresent": true,
+                "subscriptionUsedPercent": 75
+              }
+            }
+          ],
+          "claude": [
+            {
+              "authenticatedBy": "claude.ai",
+              "checkedAt": "2026-07-26T16:16:06.455Z",
+              "plan": "max",
+              "proof": [
+                "official SDK bundled CLI auth status loggedIn=true",
+                "authMethod=claude.ai",
+                "apiProvider=firstParty",
+                "subscriptionType=max",
+                "includedUsageRemaining=true",
+                "extraUsageEnabled=false",
+                "existingCreditsRemaining=null",
+                "API-key, Console, cloud, and custom-provider routes removed",
+                "product never purchases credits or enables top-ups"
+              ],
+              "provider": "claude",
+              "route": "subscription_allowance",
+              "usage": {
+                "existingCreditsRemaining": null,
+                "extraUsageEnabled": false,
+                "providerManagedCreditBalanceAvailable": null,
+                "providerManagedCreditBalanceChangedSincePrevious": null,
+                "providerManagedCreditsPresent": null,
+                "subscriptionUsedPercent": null
+              }
+            },
+            {
+              "authenticatedBy": "claude.ai",
+              "checkedAt": "2026-07-26T16:17:20.958Z",
+              "plan": "max",
+              "proof": [
+                "official SDK bundled CLI auth status loggedIn=true",
+                "authMethod=claude.ai",
+                "apiProvider=firstParty",
+                "subscriptionType=max",
+                "includedUsageRemaining=true",
+                "extraUsageEnabled=false",
+                "existingCreditsRemaining=null",
+                "API-key, Console, cloud, and custom-provider routes removed",
+                "product never purchases credits or enables top-ups"
+              ],
+              "provider": "claude",
+              "route": "subscription_allowance",
+              "usage": {
+                "existingCreditsRemaining": null,
+                "extraUsageEnabled": false,
+                "providerManagedCreditBalanceAvailable": null,
+                "providerManagedCreditBalanceChangedSincePrevious": null,
+                "providerManagedCreditsPresent": null,
+                "subscriptionUsedPercent": null
+              }
+            },
+            {
+              "authenticatedBy": "claude.ai",
+              "checkedAt": "2026-07-26T16:20:24.431Z",
+              "plan": "max",
+              "proof": [
+                "official SDK bundled CLI auth status loggedIn=true",
+                "authMethod=claude.ai",
+                "apiProvider=firstParty",
+                "subscriptionType=max",
+                "includedUsageRemaining=true",
+                "extraUsageEnabled=false",
+                "existingCreditsRemaining=null",
+                "API-key, Console, cloud, and custom-provider routes removed",
+                "product never purchases credits or enables top-ups"
+              ],
+              "provider": "claude",
+              "route": "subscription_allowance",
+              "usage": {
+                "existingCreditsRemaining": null,
+                "extraUsageEnabled": false,
+                "providerManagedCreditBalanceAvailable": null,
+                "providerManagedCreditBalanceChangedSincePrevious": null,
+                "providerManagedCreditsPresent": null,
+                "subscriptionUsedPercent": null
+              }
+            }
+          ]
+        },
+        "codexCreditBalance": {
+          "snapshots": [
+            {
+              "index": 0,
+              "route": "subscription_allowance",
+              "creditsPresent": true,
+              "balanceAvailable": true,
+              "changedSincePrevious": null
+            },
+            {
+              "index": 1,
+              "route": "subscription_allowance",
+              "creditsPresent": true,
+              "balanceAvailable": true,
+              "changedSincePrevious": false
+            },
+            {
+              "index": 2,
+              "route": "subscription_allowance",
+              "creditsPresent": true,
+              "balanceAvailable": true,
+              "changedSincePrevious": false
+            }
+          ],
+          "consumingExistingCredits": false,
+          "changedWhileSubscription": false,
+          "complete": true
+        },
+        "claudePosture": {
+          "authenticatedByUnchanged": true,
+          "planUnchanged": true,
+          "extraUsageSettingUnchanged": true
+        },
+        "duration": {
+          "startedAt": "2026-07-26T16:16:04.246Z",
+          "finishedAt": "2026-07-26T16:21:00.207Z",
+          "durationMs": 295961,
+          "maximumDurationMs": 1800000,
+          "deadlineExceeded": false,
+          "passed": true
+        },
+        "wakeLatency": {
+          "sampleCount": 6,
+          "p95Ms": 11,
+          "thresholdMs": 5000,
+          "coverageComplete": true,
+          "passed": true
+        },
+        "overhead": {
+          "total": 389629,
+          "coordinationUpper": 4168,
+          "usefulLower": 385461,
+          "ratio": 1.010813026479981,
+          "coverageComplete": true,
+          "uncausedInvocations": 0,
+          "passed": true,
+          "byProvider": {
+            "claude": {
+              "input": 18,
+              "cachedInput": 219836,
+              "output": 13073,
+              "reasoning": 0
+            },
+            "codex": {
+              "input": 77751,
+              "cachedInput": 75008,
+              "output": 2376,
+              "reasoning": 1567
+            }
+          }
+        },
+        "eventChain": {
+          "ok": true,
+          "count": 38
+        },
+        "finalEventHash": "3f3b5471e4057084dcde69ea23ac935aeb790d652777bcd838540569d946ac5f",
+        "artifact": {
+          "path": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-MdOi8j/workspace/canary-output.txt",
+          "expectedSha256": "c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd",
+          "actualSha256": "c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd",
+          "exact": true
+        },
+        "candidateDigest": "32e1ef98d55fc2da4f7a4a4ac6f0b4cff2061560e054eea4637b7edee5117b0b",
+        "verificationDigest": "00a0a93020f17fe308ae94a346e135d83597a0b9fcf4142d4b99d6f9b91c9265",
+        "usageRecordCount": 6,
+        "usageCoverageComplete": true,
+        "noOpInvocations": 0,
+        "forbiddenBillingMethods": 0,
+        "modelAttemptsByProvider": {
+          "codex": 3,
+          "claude": 3
+        },
+        "modelStartsByProvider": {
+          "codex": 3,
+          "claude": 3
+        },
+        "modelStarts": 6,
+        "budgetedUsefulBursts": {
+          "codex": 3,
+          "claude": 3
+        },
+        "authorizationClaim": {
+          "markerPath": "/private/tmp/collab-v13-e2e-final-20260726.json.consumed",
+          "authorizationDigest": "6cb940e1640b517e49f468fa8e2dd04367c55ede2af58e7323a343f224cc5409",
+          "evidenceOutputPath": "/Users/coldistric/source/repos/codex-claude-communication/product/artifacts/v13-collab-e2e.json",
+          "claimedAt": "2026-07-26T16:16:04.228Z"
+        }
+      }
+    }
+  },
+  "deterministicPassed": true,
+  "releaseReady": true,
+  "passed": true
+}

@@ -1,0 +1,69 @@
+{
+  "manifestVersion": 1,
+  "nodeMajor": 22,
+  "collabdSchemaVersion": 2,
+  "codex": {
+    "binary": "/Applications/ChatGPT.app/Contents/Resources/codex",
+    "version": "codex-cli 0.146.0-alpha.3.1",
+    "schemaSnapshot": "../tasks/2026-07-25-collaboration-product-blueprint/artifacts/codex-appserver-schema-stable",
+    "combinedSchemaSha256": "7c56957b737cc65ec8ee19c0a30fd2e942349b19da42fca7e67f2c4be3a0ccde",
+    "combinedSchemaCanonicalSha256": "b5719e63be18118f4231ce6d2d797acd4cddeb801ea44e8aceb4b7860fe6947c",
+    "transport": "stdio://",
+    "serviceTier": "standard"
+  },
+  "claude": {
+    "sdkPackage": "@anthropic-ai/claude-agent-sdk",
+    "sdkVersion": "0.3.220",
+    "usesBundledCli": true,
+    "bundledCliVersion": "2.1.220",
+    "bundledCliSha256": "8addc857f3fe64d5a0368af9ee50321b50afb4a6918ba3ef018ab84f5dbbe081",
+    "requiredCapabilities": [],
+    "watchItems": [
+      "--bare must never be passed",
+      "SDK subscription policy must be revalidated after a pinned-version change"
+    ]
+  },
+  "advisor": {
+    "selectionRule": "metadata-only deterministic default row: Codex model/list non-hidden isDefault=true row (exact `model` field); Claude supportedModels() `value: \"default\"` row resolved through `resolvedModel`. Both efforts must be advertised by the selected row; otherwise the provider stays unavailable.",
+    "observedAt": "2026-07-27",
+    "serviceTier": "standard",
+    "codex": {
+      "available": true,
+      "catalogId": "gpt-5.6-sol",
+      "canonicalModel": "gpt-5.6-sol",
+      "efforts": { "high": "high", "medium": "medium" }
+    },
+    "claude": {
+      "available": true,
+      "catalogValue": "default",
+      "canonicalModel": "claude-opus-5[1m]",
+      "efforts": { "high": "high", "medium": "medium" }
+    }
+  },
+  "overheadGate": {
+    "gateVersion": "overhead-gate-v2",
+    "referenceClassifier": "real-burst-v2",
+    "referenceFixture": "packages/service/test/fixtures/v13-final-e2e-recorded.json",
+    "referenceFixtureSha256": "627534eefa05530589e8685b51fd05b9bcffefc1f5965f80096b07a8b54f35a7",
+    "referenceChargedBytes": 15426,
+    "referenceWorkerBursts": 6,
+    "multiplier": 3,
+    "rounding": "next-power-of-two",
+    "absoluteAllowanceBytesPerWorkerBurst": 8192,
+    "note": "nextPowerOfTwo(3 * 15426 / 6) = nextPowerOfTwo(7713) = 8192. The allowance applies only to attributable mixed-call coordinator bytes; a future constant change requires a new gate version, a new pinned derivation, and fresh pass/fail regressions."
+  },
+  "forbiddenProviderMethods": [
+    "account/rateLimitResetCredit/consume",
+    "account/sendAddCreditsNudgeEmail",
+    "account/login/start:apiKey"
+  ],
+  "forbiddenFlags": [
+    "--bare",
+    "--dangerously-skip-permissions",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--fallback-model",
+    "--no-session-persistence",
+    "--ephemeral",
+    "bypassPermissions"
+  ]
+}

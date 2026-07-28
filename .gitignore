@@ -1,0 +1,7 @@
+.DS_Store
+node_modules/
+.playwright/
+packages/*/node_modules/
+packages/ui/dist/
+artifacts/*.sqlite*
+artifacts/*.tmp

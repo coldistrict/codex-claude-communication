@@ -1,0 +1,13 @@
+{
+  "name": "@collab/migration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --reporter=default"
+  },
+  "dependencies": {
+    "@collab/kernel": "0.1.0"
+  }
+}

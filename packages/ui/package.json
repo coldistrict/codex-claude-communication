@@ -1,0 +1,23 @@
+{
+  "name": "@collab/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "test": "PLAYWRIGHT_BROWSERS_PATH=\"$INIT_CWD/.playwright\" node --import tsx test/a11y.ts"
+  },
+  "dependencies": {
+    "@collab/contracts": "0.1.0",
+    "@collab/service": "0.1.0",
+    "preact": "10.27.2"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.55.1",
+    "@preact/preset-vite": "2.10.2",
+    "tsx": "4.20.5",
+    "vite": "7.1.7",
+    "vitest": "3.2.4"
+  }
+}

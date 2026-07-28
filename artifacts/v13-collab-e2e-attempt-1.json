@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 1,
+  "kind": "collaboration_product_canary_evidence",
+  "suite": "V-13-collab-e2e",
+  "observedAt": "2026-07-26T15:35:45.770Z",
+  "authorization": {
+    "kind": "real_canary",
+    "scope": "collab-e2e",
+    "confirmed": true,
+    "providers": [
+      "codex",
+      "claude"
+    ],
+    "issuedAt": "2026-07-26T15:31:09Z",
+    "expiresAt": "2026-07-26T16:16:09Z"
+  },
+  "authorizationDigest": "174c6622dbfb0c34616d3e7866b55229f8cb04a6aaaf47dfa61640c48884e55e",
+  "result": {
+    "suite": "V-13-collab-e2e",
+    "passed": false,
+    "status": "completed_consensus",
+    "runId": "run_9272c22c-be26-4d62-9960-d546054e2da1",
+    "workspace": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-onnAhJ/workspace",
+    "canaryRoot": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-onnAhJ",
+    "codexBillingRoute": "subscription_allowance",
+    "claudeBillingRoute": "subscription_allowance",
+    "billingBefore": {
+      "codex": {
+        "authenticatedBy": "chatgpt",
+        "checkedAt": "2026-07-26T15:31:39.246Z",
+        "plan": "plus",
+        "proof": [
+          "account/read type=chatgpt",
+          "paid plan=plus",
+          "primary.usedPercent=59",
+          "credits.hasCredits=true",
+          "provider policy: subscription allowance is consumed before existing credits",
+          "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+        ],
+        "provider": "codex",
+        "route": "subscription_allowance"
+      },
+      "claude": {
+        "authenticatedBy": "claude.ai",
+        "checkedAt": "2026-07-26T15:31:40.284Z",
+        "plan": "max",
+        "proof": [
+          "official SDK bundled CLI auth status loggedIn=true",
+          "authMethod=claude.ai",
+          "apiProvider=firstParty",
+          "subscriptionType=max",
+          "includedUsageRemaining=true",
+          "extraUsageEnabled=false",
+          "existingCreditsRemaining=null",
+          "API-key, Console, cloud, and custom-provider routes removed",
+          "product never purchases credits or enables top-ups"
+        ],
+        "provider": "claude",
+        "route": "subscription_allowance"
+      }
+    },
+    "billingAfter": {
+      "codex": {
+        "authenticatedBy": "chatgpt",
+        "checkedAt": "2026-07-26T15:35:06.262Z",
+        "plan": "plus",
+        "proof": [
+          "account/read type=chatgpt",
+          "paid plan=plus",
+          "primary.usedPercent=60",
+          "credits.hasCredits=true",
+          "provider policy: subscription allowance is consumed before existing credits",
+          "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+        ],
+        "provider": "codex",
+        "route": "subscription_allowance"
+      },
+      "claude": {
+        "authenticatedBy": "claude.ai",
+        "checkedAt": "2026-07-26T15:35:06.664Z",
+        "plan": "max",
+        "proof": [
+          "official SDK bundled CLI auth status loggedIn=true",
+          "authMethod=claude.ai",
+          "apiProvider=firstParty",
+          "subscriptionType=max",
+          "includedUsageRemaining=true",
+          "extraUsageEnabled=false",
+          "existingCreditsRemaining=null",
+          "API-key, Console, cloud, and custom-provider routes removed",
+          "product never purchases credits or enables top-ups"
+        ],
+        "provider": "claude",
+        "route": "subscription_allowance"
+      }
+    },
+    "billingSnapshots": {
+      "codex": [
+        {
+          "authenticatedBy": "chatgpt",
+          "checkedAt": "2026-07-26T15:31:39.246Z",
+          "plan": "plus",
+          "proof": [
+            "account/read type=chatgpt",
+            "paid plan=plus",
+            "primary.usedPercent=59",
+            "credits.hasCredits=true",
+            "provider policy: subscription allowance is consumed before existing credits",
+            "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+          ],
+          "provider": "codex",
+          "route": "subscription_allowance"
+        },
+        {
+          "authenticatedBy": "chatgpt",
+          "checkedAt": "2026-07-26T15:32:40.583Z",
+          "plan": "plus",
+          "proof": [
+            "account/read type=chatgpt",
+            "paid plan=plus",
+            "primary.usedPercent=60",
+            "credits.hasCredits=true",
+            "provider policy: subscription allowance is consumed before existing credits",
+            "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+          ],
+          "provider": "codex",
+          "route": "subscription_allowance"
+        },
+        {
+          "authenticatedBy": "chatgpt",
+          "checkedAt": "2026-07-26T15:35:06.262Z",
+          "plan": "plus",
+          "proof": [
+            "account/read type=chatgpt",
+            "paid plan=plus",
+            "primary.usedPercent=60",
+            "credits.hasCredits=true",
+            "provider policy: subscription allowance is consumed before existing credits",
+            "purchase, top-up, add-credits, and reset-credit methods are absent from the adapter"
+          ],
+          "provider": "codex",
+          "route": "subscription_allowance"
+        }
+      ],
+      "claude": [
+        {
+          "authenticatedBy": "claude.ai",
+          "checkedAt": "2026-07-26T15:31:40.284Z",
+          "plan": "max",
+          "proof": [
+            "official SDK bundled CLI auth status loggedIn=true",
+            "authMethod=claude.ai",
+            "apiProvider=firstParty",
+            "subscriptionType=max",
+            "includedUsageRemaining=true",
+            "extraUsageEnabled=false",
+            "existingCreditsRemaining=null",
+            "API-key, Console, cloud, and custom-provider routes removed",
+            "product never purchases credits or enables top-ups"
+          ],
+          "provider": "claude",
+          "route": "subscription_allowance"
+        },
+        {
+          "authenticatedBy": "claude.ai",
+          "checkedAt": "2026-07-26T15:32:41.714Z",
+          "plan": "max",
+          "proof": [
+            "official SDK bundled CLI auth status loggedIn=true",
+            "authMethod=claude.ai",
+            "apiProvider=firstParty",
+            "subscriptionType=max",
+            "includedUsageRemaining=true",
+            "extraUsageEnabled=false",
+            "existingCreditsRemaining=null",
+            "API-key, Console, cloud, and custom-provider routes removed",
+            "product never purchases credits or enables top-ups"
+          ],
+          "provider": "claude",
+          "route": "subscription_allowance"
+        },
+        {
+          "authenticatedBy": "claude.ai",
+          "checkedAt": "2026-07-26T15:35:06.664Z",
+          "plan": "max",
+          "proof": [
+            "official SDK bundled CLI auth status loggedIn=true",
+            "authMethod=claude.ai",
+            "apiProvider=firstParty",
+            "subscriptionType=max",
+            "includedUsageRemaining=true",
+            "extraUsageEnabled=false",
+            "existingCreditsRemaining=null",
+            "API-key, Console, cloud, and custom-provider routes removed",
+            "product never purchases credits or enables top-ups"
+          ],
+          "provider": "claude",
+          "route": "subscription_allowance"
+        }
+      ]
+    },
+    "overhead": {
+      "total": 301535,
+      "coordinationUpper": 194314,
+      "usefulLower": 107221,
+      "ratio": 2.8122755803434027,
+      "coverageComplete": true,
+      "uncausedInvocations": 0,
+      "passed": false,
+      "byProvider": {
+        "claude": {
+          "input": 16,
+          "cachedInput": 138107,
+          "output": 10088,
+          "reasoning": 0
+        },
+        "codex": {
+          "input": 76497,
+          "cachedInput": 72960,
+          "output": 2319,
+          "reasoning": 1548
+        }
+      }
+    },
+    "eventChain": {
+      "ok": true,
+      "count": 32
+    },
+    "finalEventHash": "6c278a2b12a15b9db983db149f1039650c3a43940f51e3fa777c5168986d1244",
+    "artifact": {
+      "path": "/var/folders/jv/mhm5l8gx6fz6dkn8w50dkh3w0000gn/T/collab-canary-collab-e2e-onnAhJ/workspace/canary-output.txt",
+      "expectedSha256": "c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd",
+      "actualSha256": "c6afdde537b6c154eb98dbf7af076991f14b47253c45c5d10b1f133cb0e510bd",
+      "exact": true
+    },
+    "candidateDigest": "f9ac8aaa989e7092d7be54c768e5e2b363fc9f84c3a552215b1fc8560cd77989",
+    "verificationDigest": "8af5be05cf07bd2e240c27f94a446c0971b03ff2900c45700e829f1012f32e2f",
+    "usageRecordCount": 6,
+    "usageCoverageComplete": true,
+    "noOpInvocations": 0,
+    "modelStartsByProvider": {
+      "codex": 3,
+      "claude": 3
+    },
+    "modelStarts": 6
+  },
+  "evidenceDigest": "80c13bdf7343966baef7c9819442a1c2206c8210b2b77cc3ef606d690212af04"
+}
