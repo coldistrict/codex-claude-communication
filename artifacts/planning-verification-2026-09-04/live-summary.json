@@ -1,0 +1,102 @@
+{
+  "kind": "three bounded live smoke trials; not a quality comparison",
+  "trials": [
+    {
+      "trial": 1,
+      "stateAtTrial": "waiting_user",
+      "agreement": "pending",
+      "fulfillment": "pending",
+      "modelCalls": 6,
+      "callsWithUsage": 6,
+      "usage": {
+        "input": 41122,
+        "cachedInput": 0,
+        "output": 15896,
+        "reasoning": 5496
+      },
+      "usageComplete": false,
+      "returnedCallLatencyMs": 477560,
+      "bodyWords": 458,
+      "revision": "2e3cce55dfd401243b62232b35e115a708c9d19b92a9cc10bf6a0dd5b1557bc5",
+      "changes": [
+        "Added explicitly timed weekly reflection and a final assessment within the eight-hour budget.",
+        "Added a concrete setup fallback that reallocates practice time while preserving checks.",
+        "Selected the narrower formula scope; explicitly deferred the broader proposal\u2019s percentage, IF, and chart exercises.",
+        "Changed the filtering task to identifying a category\u2019s largest line total.",
+        "Specified blank rows before grand totals and bounded the sorting range.",
+        "Added sorting/filtering to the Week 4 rebuild and identified that tracker as the assessment file.",
+        "Replaced the readiness cutoff with descriptive progress records and an explicit limit on what completion demonstrates."
+      ],
+      "actions": [
+        {
+          "actions": [
+            "Cancel"
+          ],
+          "body": "Completed work is saved. No additional calls will start.",
+          "id": "timeout_61bf0f43-63d6-41cc-8253-c06ecad652e2",
+          "kind": "needs_input",
+          "title": "Planning time limit reached"
+        }
+      ]
+    },
+    {
+      "trial": 2,
+      "stateAtTrial": "completed_disagreement",
+      "agreement": "agreed",
+      "fulfillment": "met",
+      "modelCalls": 7,
+      "callsWithUsage": 7,
+      "usage": {
+        "input": 54634,
+        "cachedInput": 776,
+        "output": 8284,
+        "reasoning": 102
+      },
+      "usageComplete": true,
+      "returnedCallLatencyMs": 208292,
+      "bodyWords": 451,
+      "revision": "125dd6ddd1f32bc9bcca1668b9c65d30c87cbde30ddc2a9a03b023177c779b8d",
+      "changes": [
+        "Removed unsupported retention and competence assurances from the broader proposal.",
+        "Narrowed the curriculum and replaced ambiguous assessment tasks with explicit verification.",
+        "Aligned the chart assessment with the chart-skipping contingency.",
+        "Specified the time substitution for prerequisite work.",
+        "Removed the unnecessary decision about extending the requested duration."
+      ],
+      "actions": []
+    },
+    {
+      "trial": 3,
+      "stateAtTrial": "waiting_user",
+      "agreement": "pending",
+      "fulfillment": "pending",
+      "modelCalls": 1,
+      "callsWithUsage": 1,
+      "usage": {
+        "input": 10077,
+        "cachedInput": 0,
+        "output": 1044,
+        "reasoning": 0
+      },
+      "usageComplete": true,
+      "returnedCallLatencyMs": 36227,
+      "bodyWords": 0,
+      "revision": null,
+      "changes": [],
+      "actions": [
+        {
+          "actions": [
+            "Cancel"
+          ],
+          "body": "DOCUMENT_CLAIM_EVIDENCE_INVALID",
+          "id": "planning_error_f8537909-11df-4eee-99fa-a114d5049636",
+          "kind": "needs_input",
+          "title": "Planning stopped with a partial or blocked result"
+        }
+      ]
+    }
+  ],
+  "totalModelCalls": 14,
+  "humanPreferenceRatings": null,
+  "qualityConclusion": "Feasibility demonstrated by one fully reviewed document. No controlled quality improvement established. Final corrections have deterministic regressions, not an additional live rerun."
+}

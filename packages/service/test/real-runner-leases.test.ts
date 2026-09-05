@@ -16,7 +16,7 @@ function fixture() {
     publish: () => undefined,
   });
   const runId = coordinator.createRun(
-    {
+    { workflow: "execution",
       goal: "Exercise production lease boundaries.",
       workspace,
       mode: "real",
@@ -154,12 +154,19 @@ describe("real-run production mutation leases", () => {
       publish: () => undefined,
     });
     const events = store.events(runId);
+    // The failure card is already pending, so restart recovery neither
+    // duplicates the reconciliation surface nor replays the work.
     expect(
       events.some(
         (event) =>
           event.idempotencyKey.startsWith("recovery:uncertain-lease:"),
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      store
+        .projection(runId)
+        .actions.filter((action) => action.kind === "uncertain_effect"),
+    ).toHaveLength(1);
     expect(
       events.some(
         (event) =>

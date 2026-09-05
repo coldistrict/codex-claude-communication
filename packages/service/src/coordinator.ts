@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, realpathSync, statSync } from "node:fs";
-import { extname, isAbsolute, relative, resolve } from "node:path";
+import { readFileSync, realpathSync, statSync, mkdirSync } from "node:fs";
+import { dirname, join, extname, isAbsolute, relative, resolve } from "node:path";
 import {
   DEFAULT_ADVISOR_CONFIG,
   type AdvisorConfig,
@@ -24,19 +24,29 @@ import {
   type PreflightResult,
 } from "@collab/adapters/policy";
 import { digest, EventStore, ReadyQueue } from "@collab/kernel";
-import { isContainedPath, redactSecrets } from "@collab/security";
+import {
+  analyzeCommand,
+  isContainedPath,
+  isScratchPath,
+  redactSecrets,
+  scratchRoots,
+} from "@collab/security";
 import { persistStableOverheadBreach } from "./overhead-notice.ts";
 import type { RealCollaborationRunner } from "./real-runner.ts";
 
+import { PlanningRunner, type PlanningOptions } from './planning-runner.ts';
+
 export interface CreateRunInput {
+  workflow?: 'planning' | 'execution';
   goal: string;
-  workspace: string;
+  workspace?: string;
   constraints?: string[];
   completionEvidence?: string[];
   mode?: "fake" | "preflight_only" | "real";
   budgets?: { perMaterialChallenge?: number; perProvider?: number };
   attachmentPaths?: string[];
-  permissionPreset?: "default" | "read_only";
+  readableRoots?: string[];
+  permissionPreset?: "auto" | "default" | "read_only";
   stopConditions?: { maxDurationMinutes?: number | null };
   resourceMode?: "automatic" | "serialized";
   /** Optional per-run adviser opt-in; disabled when absent. */
@@ -48,8 +58,23 @@ export interface CreateRunInput {
 }
 
 export interface CoordinatorOptions {
+  planning?: Partial<PlanningOptions>;
   codexBinary: string;
   publish?: (runId: string) => void;
+  /** Transient live-feed line; see RealRunnerOptions.publishActivity. */
+  publishActivity?: (
+    runId: string,
+    activity: {
+      role: ProviderRole;
+      kind: "tool" | "text" | "status";
+      summary: string;
+    },
+  ) => void;
+  /** Transient model/effort statement; see RealRunnerOptions.publishIdentity. */
+  publishIdentity?: (
+    runId: string,
+    identity: { role: ProviderRole; model: string | null; effort: string | null },
+  ) => void;
   environment?: NodeJS.ProcessEnv;
   resourceState?: () => {
     degraded: boolean;
@@ -80,6 +105,8 @@ export class Coordinator {
   readonly queue: ReadyQueue;
   private readonly bridges = new Map<string, ApprovalBridge>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private planningRunner: PlanningRunner | null = null;
+  private readonly pendingInputs = new Map<string, { runId: string; resolve: (value: unknown) => void; questions: any[] }>();
   private runnerPromise: Promise<RealCollaborationRunner> | null = null;
 
   constructor(
@@ -92,11 +119,21 @@ export class Coordinator {
 
   createRun(input: CreateRunInput, deferExecution = false): string {
     if (!input.goal.trim()) throw new Error("GOAL_REQUIRED");
-    if (!input.workspace.startsWith("/")) throw new Error("WORKSPACE_MUST_BE_ABSOLUTE");
-    const workspace = realpathSync(resolve(input.workspace));
+    const workflow = input.workflow ?? (input.mode === 'fake' ? 'execution' : 'planning');
+    if (!['planning','execution'].includes(workflow)) throw new Error('INVALID_WORKFLOW');
+    if (input.mode && !['fake','preflight_only','real'].includes(input.mode)) throw new Error('INVALID_RUN_MODE');
+    if (workflow === 'planning' && input.mode === 'fake') throw new Error('PLANNING_FIXTURE_REQUIRES_INJECTED_PORT');
+    for (const value of [input.budgets?.perProvider, input.budgets?.perMaterialChallenge]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 1 || value > 200)) throw new Error('INVALID_WORK_BUDGET');
+    const runId = `run_${randomUUID()}`;
+    if (workflow === 'planning' && input.advisor?.enabled) throw new Error('ADVISER_OUTSIDE_PLANNING_PATH');
+    const managed = join(dirname(this.store.file), 'runs', runId, 'runtime');
+    if (!input.workspace?.trim() && workflow === 'planning') mkdirSync(managed, { recursive: true, mode: 0o700 });
+    const requestedWorkspace = input.workspace?.trim() || (workflow === 'planning' ? managed : '');
+    if (!requestedWorkspace.startsWith("/")) throw new Error("WORKSPACE_MUST_BE_ABSOLUTE");
+    const workspace = realpathSync(resolve(requestedWorkspace));
     if (!statSync(workspace).isDirectory()) throw new Error("WORKSPACE_NOT_DIRECTORY");
-    const permissionPreset = input.permissionPreset ?? "default";
-    if (!["default", "read_only"].includes(permissionPreset)) {
+    const permissionPreset = workflow === "planning" ? "read_only" : input.permissionPreset ?? "default";
+    if (!["auto", "default", "read_only"].includes(permissionPreset)) {
       throw new Error("INVALID_PERMISSION_PRESET");
     }
     const resourceMode = input.resourceMode ?? "automatic";
@@ -120,6 +157,28 @@ export class Coordinator {
     if (!Array.isArray(attachmentPaths) || attachmentPaths.length > 20) {
       throw new Error("INVALID_ATTACHMENTS");
     }
+    const readableRootInputs = input.readableRoots ?? [];
+    if (!Array.isArray(readableRootInputs) || readableRootInputs.length > 16) {
+      throw new Error("INVALID_READABLE_ROOTS");
+    }
+    const readableRoots = [
+      ...new Set(
+        readableRootInputs.map((candidate) => {
+          if (typeof candidate !== "string" || !candidate.trim()) {
+            throw new Error("INVALID_READABLE_ROOT");
+          }
+          const requested = candidate.trim();
+          if (!requested.startsWith("/")) {
+            throw new Error("READABLE_ROOT_MUST_BE_ABSOLUTE");
+          }
+          const path = realpathSync(resolve(requested));
+          if (!statSync(path).isDirectory()) {
+            throw new Error("READABLE_ROOT_NOT_DIRECTORY");
+          }
+          return path;
+        }),
+      ),
+    ].filter((root) => !isContainedPath(workspace, root));
     let advisor: AdvisorConfig | undefined;
     if (input.advisor?.enabled === true) {
       const provider = input.advisor.provider ?? DEFAULT_ADVISOR_CONFIG.provider;
@@ -161,8 +220,9 @@ export class Coordinator {
         mediaType: this.attachmentMediaType(path),
       };
     });
-    const runId = `run_${randomUUID()}`;
     const base = {
+      workflow,
+      projectContext: workflow === "planning" ? (input.workspace?.trim() ? workspace : null) : null,
       goal: redactSecrets(input.goal.trim()),
       workspace,
       constraints: (input.constraints ?? []).map((constraint) =>
@@ -171,6 +231,7 @@ export class Coordinator {
       attachments,
       authority: {
         writableRoots: permissionPreset === "read_only" ? [] : [workspace],
+        readableRoots,
         network: "off" as const,
         permissionPreset,
       },
@@ -182,7 +243,7 @@ export class Coordinator {
       ),
       usefulWorkBudget: {
         perMaterialChallenge: input.budgets?.perMaterialChallenge ?? 4,
-        perProvider: input.budgets?.perProvider ?? 24,
+        perProvider: input.budgets?.perProvider ?? (workflow === "planning" ? 9 : 24),
       },
     };
     const goalPacket: GoalPacket = {
@@ -199,7 +260,7 @@ export class Coordinator {
       idempotencyKey: `goal:${goalPacket.id}`,
       payload: { goal: goalPacket },
     });
-    const mode = input.mode ?? "fake";
+    const mode = input.mode ?? "real";
     if (!deferExecution && mode === "fake") this.runDeterministicDemo(runId);
     if (!deferExecution && (mode === "preflight_only" || mode === "real")) {
       queueMicrotask(() => {
@@ -226,17 +287,20 @@ export class Coordinator {
             : label === "Defer"
               ? { behavior: "defer", scope: "once" }
               : { behavior: "deny", scope: "once" };
-      pending.bridge.decide(cardId, decision);
-      if (decision.behavior === "defer") return;
+      // The bridge may narrow the requested scope (task scope is never
+      // honored outside the workspace); the durable record and the provider
+      // translation must both reflect the decision actually applied.
+      const { decision: applied } = pending.bridge.decide(cardId, decision);
+      if (applied.behavior === "defer") return;
       this.append({
         runId,
         actor: "user",
         type: "permission_decided",
         idempotencyKey: `permission:${cardId}:${label}`,
-        payload: { cardId, role: pending.role, decision },
+        payload: { cardId, role: pending.role, decision: applied },
       });
       this.pendingApprovals.delete(cardId);
-      pending.resolve(pending.translate(decision));
+      pending.resolve(pending.translate(applied));
       this.options.publish?.(runId);
       return;
     }
@@ -252,6 +316,29 @@ export class Coordinator {
       suppliedDetails.length === 0
     ) {
       throw new Error("ACTION_DETAILS_REQUIRED");
+    }
+    if (!card.actions.includes(label)) throw new Error('ACTION_NOT_OFFERED');
+    const nativeInput = this.pendingInputs.get(cardId);
+    if (nativeInput && label === 'Answer') {
+      if (nativeInput.runId !== runId) throw new Error('ACTION_RUN_MISMATCH');
+      let answers: Record<string, string>;
+      try { answers = JSON.parse(suppliedDetails); if (!answers || typeof answers !== 'object' || Array.isArray(answers)) throw new Error('Not an answer map'); } catch { answers = nativeInput.questions.length === 1 ? { [nativeInput.questions[0].id]: suppliedDetails } : {}; }
+      if (!answers || nativeInput.questions.some(q => typeof answers[q.id] !== 'string' || !answers[q.id]!.trim())) throw new Error('CLARIFICATION_ANSWER_REQUIRED');
+      if (projection.planning) this.append({ runId, actor: 'user', type: 'clarification_answered', idempotencyKey: `input:${cardId}`, payload: { cardId, question: card.body, answer: suppliedDetails } });
+      else this.append({ runId, actor: 'user', type: 'human_override', idempotencyKey: `input:${cardId}`, payload: { cardId, decision: 'clarification_answer', question: card.body, information: suppliedDetails } });
+      this.pendingInputs.delete(cardId);
+      nativeInput.resolve({ answers: Object.fromEntries(nativeInput.questions.map(q => [q.id, { answers: [answers[q.id]!] }])) });
+      this.options.publish?.(runId); return;
+    }
+    if (projection.planning && label !== 'Cancel') {
+      if (label === 'Answer') this.append({ runId, actor: 'user', type: 'clarification_answered', idempotencyKey: `answer:${cardId}`, payload: { cardId, question: card.body, answer: suppliedDetails } });
+      else if (label === 'Extend budget') {
+        this.append({ runId, actor: 'user', type: 'planning_extension', idempotencyKey: `extend:${cardId}`, payload: { cardId, focus: suppliedDetails } });
+        for (const role of ['codex','claude'] as const) this.append({ runId, actor: 'user', type: 'budget_extended', idempotencyKey: `planning-budget:${cardId}:${role}`, payload: { role, units: 3, cardId } });
+      } else if (label === 'Keep partial result') { this.planner().finish(runId); return; }
+      else if (label === 'Retry collaboration') this.append({ runId, actor: 'user', type: 'human_override', idempotencyKey: `retry:${cardId}`, payload: { cardId, decision: 'retry_collaboration' } });
+      else throw new Error(`ACTION_NOT_SUPPORTED:${label}`);
+      queueMicrotask(() => { void this.runReal(runId, true); }); return;
     }
     if (label === "Cancel") {
       await this.stopActiveRun(runId);
@@ -407,7 +494,13 @@ export class Coordinator {
     this.options.publish?.(runId);
   }
 
+  async shutdown(): Promise<void> { await this.planningRunner?.close(); }
+  private planner(): PlanningRunner {
+    return this.planningRunner ??= new PlanningRunner(this.store, { codexBinary: this.options.codexBinary, ...(this.options.environment ? { environment: this.options.environment } : {}), publish: id => this.options.publish?.(id), admitWork: () => this.options.resourceState?.().admitHeavyWork ?? true, onCodexServerRequest: (id, message) => this.handleCodexServerRequest(id, message), ...this.options.planning });
+  }
   private async stopActiveRun(runId: string): Promise<void> {
+    for (const [id, wait] of this.pendingInputs) if (wait.runId === runId) { this.pendingInputs.delete(id); wait.resolve({ answers: Object.fromEntries(wait.questions.map(q => [q.id, { answers: ['User cancelled the run. Stop.'] }])) }); }
+    if (this.store.projection(runId).planning) { await this.planningRunner?.cancel(runId); return; }
     if (this.runnerPromise) {
       const runner = await this.runnerPromise;
       await runner.cancel(runId);
@@ -596,6 +689,7 @@ export class Coordinator {
 
   private async runReal(runId: string, executeModels: boolean): Promise<void> {
     try {
+      if (this.store.projection(runId).planning) { await this.planner().run(runId, executeModels); return; }
       const runner = await this.realRunner();
       await runner.run(runId, executeModels);
     } catch (error) {
@@ -634,6 +728,10 @@ export class Coordinator {
     for (const runId of this.store.listRunIds()) {
       const projection = this.store.projection(runId);
       if (projection.completedAt) continue;
+      if (projection.planning) {
+        if (!projection.actions.length) this.append({ runId, actor: 'system', type: 'needs_input', idempotencyKey: `planning-recover:${projection.seq}`, payload: { card: { id: `planning_recover_${projection.seq}`, kind: 'needs_input', title: 'Resume saved planning work', body: 'The service restarted. Completed stages and revisions are saved. A pending provider call may have consumed usage without returning a result; retry resumes at the first incomplete stage.', actions: ['Retry collaboration','Cancel'] } } });
+        continue;
+      }
       for (const card of projection.actions.filter((action) => action.kind === "permission")) {
         const role = card.agent;
         if (!role) continue;
@@ -679,11 +777,27 @@ export class Coordinator {
       for (const [leaseId, payload] of outstandingLeases) {
         const role = payload.role as ProviderRole;
         const lease = payload.lease;
+        // A reconciliation card already pending for this lease means the
+        // user has the decision in front of them; re-posting under a
+        // recurring lease name would collide with the earlier record.
+        if (
+          this.store
+            .projection(runId)
+            .actions.some(
+              (action) =>
+                action.kind === "uncertain_effect" &&
+                (action.id.startsWith(`recovery_${leaseId}`) ||
+                  action.id.startsWith(`uncertain_${leaseId}`)),
+            )
+        ) {
+          continue;
+        }
+        const occurrence = this.store.projection(runId).seq;
         this.append({
           runId,
           actor: "system",
           type: "incarnation_replaced",
-          idempotencyKey: `recovery:stale-lease:${leaseId}`,
+          idempotencyKey: `recovery:stale-lease:${leaseId}:${occurrence}`,
           payload: {
             role,
             leaseId,
@@ -694,12 +808,12 @@ export class Coordinator {
           runId,
           actor: "system",
           type: "uncertain_effect",
-          idempotencyKey: `recovery:uncertain-lease:${leaseId}`,
+          idempotencyKey: `recovery:uncertain-lease:${leaseId}:${occurrence}`,
           payload: {
             role,
             leaseId,
             card: {
-              id: `recovery_${leaseId}`,
+              id: `recovery_${leaseId}_${occurrence}`,
               kind: "uncertain_effect",
               title: Array.isArray(lease.interactiveResources) &&
                 lease.interactiveResources.length
@@ -737,6 +851,12 @@ export class Coordinator {
             ? { environment: this.options.environment }
             : {}),
           publish: (runId) => this.options.publish?.(runId),
+          ...(this.options.publishActivity
+            ? { publishActivity: this.options.publishActivity }
+            : {}),
+          ...(this.options.publishIdentity
+            ? { publishIdentity: this.options.publishIdentity }
+            : {}),
           ...(this.options.resourceState
             ? { resourceState: this.options.resourceState }
             : {}),
@@ -792,7 +912,12 @@ export class Coordinator {
     if (!bridge) {
       const workspace = this.store.projection(runId).goal?.workspace;
       if (!workspace) throw new Error("RUN_GOAL_MISSING");
-      bridge = new ApprovalBridge(workspace);
+      // Scratch directories join the read auto-allow roots so the bridge
+      // agrees with the classifier; write grants stay workspace-only.
+      bridge = new ApprovalBridge(workspace, [
+        ...this.readableRoots(runId),
+        ...scratchRoots(),
+      ]);
       this.bridges.set(runId, bridge);
     }
     return bridge;
@@ -803,14 +928,21 @@ export class Coordinator {
     message: JsonRpcMessage,
   ): Promise<unknown> {
     const method = String(message.method ?? "");
-    if (method === "item/tool/requestUserInput") return { answers: {} };
+    if (method === "item/tool/requestUserInput") {
+      const questions = message.params?.questions;
+      if (!Array.isArray(questions) || !questions.length || questions.some((q: any) => typeof q.id !== 'string')) throw new Error('INVALID_PROVIDER_CLARIFICATION');
+      const id = `native_input_${randomUUID()}`;
+      const body = questions.map((q: any) => `${q.id}: ${q.question} ${(q.options ?? []).map((o: any) => o.label).join(' / ')}`).join('\n');
+      const result = new Promise<unknown>(resolve => this.pendingInputs.set(id, { runId, questions, resolve }));
+      this.append({ runId, actor: 'system', type: 'needs_input', idempotencyKey: id, payload: { role: 'codex', card: { id, kind: 'needs_input', agent: 'codex', title: 'Codex needs your input', body: redactSecrets(body), questions: questions.map((q: any) => ({ id: q.id, question: redactSecrets(String(q.question)), options: (q.options ?? []).map((o: any) => redactSecrets(String(o.label))) })), detailsLabel: 'Answer each question by its ID', requiresDetailsFor: ['Answer'], actions: ['Answer','Cancel'] } } });
+      this.options.publish?.(runId); return result;
+    }
     const workspace = this.store.projection(runId).goal?.workspace;
     if (!workspace) throw new Error("RUN_GOAL_MISSING");
     const command = String(message.params?.command ?? "");
     const network =
       Boolean(message.params?.networkApprovalContext) ||
       Boolean(message.params?.proposedNetworkPolicyAmendments?.length);
-    const classification = this.classifyCommand(command, network);
     const id = String(
       message.params?.approvalId ??
         message.params?.itemId ??
@@ -819,6 +951,13 @@ export class Coordinator {
     const paths = [
       String(message.params?.grantRoot ?? message.params?.cwd ?? workspace),
     ];
+    const classification = this.classifyCommand(
+      command,
+      network,
+      workspace,
+      paths,
+      this.readableRoots(runId),
+    );
     const permissionsRequest = method === "item/permissions/requestApproval";
     return this.requestPermission(
       runId,
@@ -838,7 +977,9 @@ export class Coordinator {
         reversibility: "Review the exact operation; workspace changes may require a manual revert.",
         classification:
           method.includes("fileChange")
-            ? "workspace_write"
+            ? paths.every((path) => isContainedPath(workspace, path))
+              ? "workspace_write"
+              : "outside_workspace"
             : permissionsRequest
               ? message.params?.permissions?.network?.enabled
                 ? "network"
@@ -882,7 +1023,13 @@ export class Coordinator {
         context.blockedPath ??
         workspace,
     );
-    const classification = this.classifyClaudeTool(toolName, command, path, workspace);
+    const classification = this.classifyClaudeTool(
+      toolName,
+      command,
+      path,
+      workspace,
+      this.readableRoots(runId),
+    );
     const id = String(context.requestId ?? context.toolUseID ?? `claude_permission_${randomUUID()}`);
     return this.requestPermission(
       runId,
@@ -952,6 +1099,15 @@ export class Coordinator {
       this.options.publish?.(runId);
       return Promise.resolve(translate(decision));
     }
+    if (preset === "auto" && request.classification === "workspace_write") {
+      // The immutable Goal Packet pre-authorizes workspace-contained writes
+      // and commands under this preset; the classifier has already routed
+      // anything outside the workspace or hazardous (destructive, install,
+      // network, system change, …) away from workspace_write, so those
+      // still surface a card. Mutation leases and the live activity feed
+      // remain the audit surface for what actually ran.
+      return Promise.resolve(translate({ behavior: "allow", scope: "once" }));
+    }
     const bridge = this.bridge(runId);
     const evaluated = bridge.evaluate(request);
     if (evaluated.allowed) {
@@ -986,16 +1142,53 @@ export class Coordinator {
     });
   }
 
-  private classifyCommand(command: string, network: boolean): PermissionClass {
+  private classifyCommand(
+    command: string,
+    network: boolean,
+    workspace: string,
+    paths: string[],
+    readableRoots: string[],
+  ): PermissionClass {
     if (network) return "network";
+    const analysis = analyzeCommand(command, workspace);
+    const containedOrScratch = (path: string) =>
+      isContainedPath(workspace, path) || isScratchPath(path);
     if (/\b(?:rm|rmdir|unlink|truncate|git\s+reset|git\s+clean)\b/i.test(command)) {
-      return "destructive";
+      // Deleting inside the workspace (or shared scratch) is no more
+      // destructive than the unrestricted Write/Edit the same sandbox
+      // already permits, so it classifies as an ordinary workspace write.
+      // The always-ask destructive class is reserved for deletions whose
+      // targets cannot be proven contained: any path outside workspace and
+      // scratch, or any unresolvable construct (`rm $X`, substitution).
+      const provablyContained =
+        !analysis.unresolvable &&
+        analysis.outsidePaths.every((path) => isScratchPath(path)) &&
+        paths.every(containedOrScratch);
+      return provablyContained ? "workspace_write" : "destructive";
     }
     if (/\b(?:npm|pnpm|yarn|pip|brew|cargo)\s+(?:i|install|add)\b/i.test(command)) {
       return "install";
     }
     if (/\b(?:curl|wget|ssh|scp|nc)\b/i.test(command)) return "network";
-    return "workspace_write";
+    if (analysis.readOnly) {
+      // Reads may roam the user-declared readable roots and scratch;
+      // anything beyond them still always asks.
+      const readRoots = [workspace, ...readableRoots];
+      const withinRead = (path: string) =>
+        readRoots.some((root) => isContainedPath(root, path)) ||
+        isScratchPath(path);
+      const outside =
+        analysis.outsidePaths.some((path) => !withinRead(path)) ||
+        paths.some((path) => !withinRead(path));
+      return outside ? "outside_workspace" : "read";
+    }
+    // A possibly-writing command touching anything outside the workspace
+    // (scratch excepted) must never be offered as a task-wide grant;
+    // outside_workspace is in the always-ask set.
+    const outside =
+      analysis.outsidePaths.some((path) => !isScratchPath(path)) ||
+      paths.some((path) => !containedOrScratch(path));
+    return outside ? "outside_workspace" : "workspace_write";
   }
 
   private classifyClaudeTool(
@@ -1003,18 +1196,29 @@ export class Coordinator {
     command: string,
     path: string,
     workspace: string,
+    readableRoots: string[],
   ): PermissionClass {
     if (["Read", "Glob", "Grep", "LS"].includes(toolName)) {
-      return isContainedPath(workspace, path) ? "read" : "outside_workspace";
+      return [workspace, ...readableRoots].some((root) =>
+        isContainedPath(root, path),
+      )
+        ? "read"
+        : "outside_workspace";
     }
     if (toolName === "WebFetch" || toolName === "WebSearch") return "network";
-    if (toolName === "Bash") return this.classifyCommand(command, false);
+    if (toolName === "Bash") {
+      return this.classifyCommand(command, false, workspace, [path], readableRoots);
+    }
     if (["Write", "Edit", "NotebookEdit"].includes(toolName)) {
       return isContainedPath(workspace, path)
         ? "workspace_write"
         : "outside_workspace";
     }
     return "system_change";
+  }
+
+  private readableRoots(runId: string): string[] {
+    return this.store.projection(runId).goal?.authority.readableRoots ?? [];
   }
 
   private attachmentMediaType(path: string): string {

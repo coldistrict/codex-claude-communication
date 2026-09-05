@@ -34,7 +34,7 @@ import {
 } from "./input.ts";
 import type { ProviderExecutionGate } from "./execution-gate.ts";
 import { AdvisorNotes } from "./notes.ts";
-import { pinnedAdvisorProfile, verifyAdvisorCatalog } from "./profile.ts";
+import { resolveDefaultAdvisorProfile } from "./profile.ts";
 
 /** Pinned per-state stall thresholds (milliseconds). */
 export const STALL_THRESHOLDS_MS: Partial<Record<WorkerStateName, number>> = {
@@ -752,13 +752,17 @@ export class AdvisorService {
       return;
     }
 
-    // Catalog verification before every wake: exact pinned row, chosen effort.
+    // Catalog resolution before every wake: the provider's current default
+    // row ("auto"), with the chosen effort verified against that row.
     let model: string;
     let effortValue: string;
     try {
-      const profile = pinnedAdvisorProfile(config.provider);
       const catalog = await port.listModels();
-      ({ model, effortValue } = verifyAdvisorCatalog(profile, config.effort, catalog));
+      ({ model, effortValue } = resolveDefaultAdvisorProfile(
+        config.provider,
+        config.effort,
+        catalog,
+      ));
     } catch (error) {
       this.sidecar.append(runId, "failure", wakeId, {
         code: "ADVISOR_MODEL_PROFILE_UNAVAILABLE",
@@ -1033,8 +1037,8 @@ export function realAdvisorPorts(options: {
       return {
         metadataPreflight: () =>
           client.metadataPreflight({
-            versionMatches: true,
-            schemaMatches: true,
+            versionMatches: false,
+            schemaMatches: false,
             forbiddenEnvironment: scrubbed.forbiddenPresent,
             spawnArgs: client.spawnArgs(),
             effectiveProviderOverride: false,
@@ -1075,8 +1079,8 @@ export function realAdvisorPorts(options: {
     return {
       metadataPreflight: () =>
         adapter.metadataPreflight({
-          versionMatches: true,
-          sdkMatches: true,
+          versionMatches: false,
+          sdkMatches: false,
           forbiddenEnvironment: scrubbed.forbiddenPresent,
           spawnArgs: [],
           apiKeyHelperPresent: false,

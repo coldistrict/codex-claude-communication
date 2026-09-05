@@ -3,6 +3,9 @@ import { ModelStartGuard, type ModelAuthorization } from "../src/model-guard.ts"
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
+// Runtime observation is a deterministic fixture in these RPC unit tests.
+vi.mock('../src/runtime.ts', () => ({ observeRuntime: async () => ({ versionMatches: true, schemaMatches: true, sdkMatches: true, version: 'fixture', trace: ['simulated runtime observation'] }) }));
+
 function advisorAuthorization(runId: string): ModelAuthorization {
   return {
     id: "advauth_codex",
@@ -51,6 +54,13 @@ describe("Codex advisor execution profile", () => {
     };
     return { client, guard, calls };
   }
+
+  it('isolates planning tools and uses an absolute timeout profile without adviser authority', async () => {
+    const { client, calls, guard } = advisorClient('gpt-6-astra');
+    await client.runBurst({ runId:'plan', prompt:'Make a plan', systemPrompt:'No tools', executionProfile:'planning', outputSchema:{type:'object'}, authorization:{id:'plan-auth',kind:'user_goal',runId:'plan',providers:['codex'],recordedAt:new Date().toISOString()} });
+    expect(guard.started).toBe(1);
+    expect(calls.find(c=>c.method==='thread/start')?.params).toMatchObject({sandbox:'read-only',approvalPolicy:'never',developerInstructions:'No tools',config:{web_search:'disabled',features:{shell_tool:false,code_mode_host:false,multi_agent:false}}});
+  });
 
   it("passes exact model, effort, outputSchema, read-only sandbox, and never-approve", async () => {
     const { client, guard, calls } = advisorClient("gpt-5.6-sol");

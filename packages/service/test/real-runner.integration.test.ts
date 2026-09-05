@@ -72,7 +72,7 @@ describe("real collaboration runner with deterministic provider ports", () => {
       publish: () => undefined,
     });
     const runId = coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: "Create and independently verify the exact canary artifact.",
         workspace,
         constraints: ["No network"],
@@ -87,12 +87,19 @@ describe("real collaboration runner with deterministic provider ports", () => {
     let closedBeforeCompletion = false;
     const codexPrompts: string[] = [];
     const claudePrompts: string[] = [];
+    let runner!: RealCollaborationRunner;
     const codex: RealCodexPort = {
       metadataPreflight: async () => billing("codex"),
       runBurst: async (input) => {
         codexBursts += 1;
         codexPrompts.push(input.prompt);
         if (codexBursts === 2) {
+          (runner as any).emitActivity(
+            runId,
+            "codex",
+            "tool",
+            "Codex candidate activity",
+          );
           writeFileSync(join(workspace, "canary-output.txt"), expectedContent);
         }
         const text =
@@ -162,6 +169,20 @@ describe("real collaboration runner with deterministic provider ports", () => {
       startBurst: async (input) => {
         claudeBursts += 1;
         claudePrompts.push(input.prompt);
+        if (claudeBursts === 2) {
+          (runner as any).emitActivity(
+            runId,
+            "claude",
+            "status",
+            "Claude review activity",
+          );
+          (runner as any).emitActivity(
+            runId,
+            "codex",
+            "status",
+            "Codex post-review activity",
+          );
+        }
         const structuredOutput =
           claudeBursts === 1
             ? {
@@ -184,7 +205,7 @@ describe("real collaboration runner with deterministic provider ports", () => {
         };
       },
     };
-    const runner = new RealCollaborationRunner(store, {
+    runner = new RealCollaborationRunner(store, {
       codexBinary: "/unused/codex",
       environment: { PATH: process.env.PATH },
       publish: () => undefined,
@@ -193,6 +214,18 @@ describe("real collaboration runner with deterministic provider ports", () => {
       onCodexServerRequest: async () => ({ decision: "decline" }),
       onClaudeToolRequest: async () => ({ behavior: "deny" }),
     });
+    (runner as any).emitActivity(
+      runId,
+      "claude",
+      "status",
+      "Claude activity before openings",
+    );
+    (runner as any).emitActivity(
+      runId,
+      "codex",
+      "status",
+      "Codex activity before openings",
+    );
 
     try {
       await runner.run(runId, true, "real_canary");
@@ -218,13 +251,38 @@ describe("real collaboration runner with deterministic provider ports", () => {
         ),
       ).toBe(true);
       expect(new ReadyQueue(store.db).size()).toBe(0);
-      expect(store.usageRecords(runId)).toHaveLength(6);
-      expect(reportOverhead(store.usageRecords(runId)).passed).toBe(true);
+      const usageRecords = store.usageRecords(runId);
+      expect(usageRecords).toHaveLength(6);
+      expect(reportOverhead(usageRecords).passed).toBe(true);
+      const postOpeningAttributions = usageRecords.filter((record) =>
+        ["candidate", "review", "signoff"].includes(
+          String((record.coordinatorOwnedContent as any)?.stage),
+        ),
+      );
+      expect(postOpeningAttributions).toHaveLength(4);
+      expect(
+        postOpeningAttributions.every((record) =>
+          (
+            (record.coordinatorOwnedContent as any)
+              ?.duplicatedRestatements as unknown[]
+          ).some((value) => String(value).includes("PEER ACTIVITY DIGEST")),
+        ),
+      ).toBe(true);
       expect(store.verifyHashChain(runId).ok).toBe(true);
       expect(codexPrompts[0]).not.toContain("Independent Claude opening");
       expect(claudePrompts[0]).not.toContain("Independent Codex opening");
+      expect(codexPrompts[0]).not.toContain("PEER ACTIVITY DIGEST");
+      expect(claudePrompts[0]).not.toContain("PEER ACTIVITY DIGEST");
       expect(codexPrompts[1]).toContain("Claude opening:");
+      expect(codexPrompts[1]).toContain("PEER ACTIVITY DIGEST");
+      expect(codexPrompts[1]).toContain("Claude activity before openings");
       expect(claudePrompts[1]).toContain("Codex candidate:");
+      expect(claudePrompts[1]).toContain("PEER ACTIVITY DIGEST");
+      expect(claudePrompts[1]).toContain("Codex candidate activity");
+      expect(codexPrompts[2]).toContain("PEER ACTIVITY DIGEST");
+      expect(codexPrompts[2]).toContain("Claude review activity");
+      expect(claudePrompts[2]).toContain("PEER ACTIVITY DIGEST");
+      expect(claudePrompts[2]).toContain("Codex post-review activity");
     } finally {
       store.close();
     }

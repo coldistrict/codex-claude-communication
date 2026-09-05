@@ -66,7 +66,7 @@ describe("retry after a recoverable provider failure", () => {
       publish: () => undefined,
     });
     const runId = coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: "Recover a failed candidate burst without double accounting.",
         workspace,
         constraints: ["No network"],

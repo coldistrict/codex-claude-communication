@@ -15,6 +15,8 @@ import {
   type PreflightResult,
 } from "./policy.ts";
 
+import { observeRuntime } from './runtime.ts';
+
 export interface JsonRpcMessage {
   id?: number;
   method?: string;
@@ -36,6 +38,8 @@ export interface CodexClientOptions {
   configOverrides?: readonly string[];
   guard?: ModelStartGuard;
   onNotification?: (message: JsonRpcMessage) => void;
+  /** Worker-burst model identity observed from thread responses. */
+  onIdentity?: (identity: { model: string | null; effort: string | null }) => void;
   onServerRequest?: (message: JsonRpcMessage) => Promise<unknown>;
 }
 
@@ -84,8 +88,17 @@ export class CodexAppServerClient {
   >();
   private readonly turnWaiters = new Map<
     string,
-    { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+    {
+      resolve: (value: any) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+      onTimeout: () => void;
+      inactivityMs: number | null;
+      capAt: number;
+    }
   >();
+  /** Approval round-trips in flight; turn inactivity timers pause meanwhile. */
+  private inflightServerRequests = 0;
   private readonly completedTurns = new Map<string, any>();
   private readonly turnText = new Map<string, string>();
   private readonly turnUsage = new Map<string, Record<string, number>>();
@@ -157,6 +170,10 @@ export class CodexAppServerClient {
       detached: process.platform !== "win32",
     });
     this.process = child;
+    child.on('error', error => {
+      for (const waiter of this.pending.values()) { clearTimeout(waiter.timer); waiter.reject(new Error(`CODEX_SPAWN_FAILED:${error.message}`)); }
+      this.pending.clear(); this.process = null;
+    });
     child.stderr.on("data", (chunk) => {
       this.stderrTail = `${this.stderrTail}${String(chunk)}`.slice(-4_000);
     });
@@ -167,6 +184,8 @@ export class CodexAppServerClient {
       } catch {
         return;
       }
+      // Any traffic from the app server is proof the turn is alive.
+      this.touchTurnWaiters();
       if (message.id !== undefined && message.method) {
         void this.handleServerRequest(message);
       } else if (message.id !== undefined) {
@@ -208,6 +227,8 @@ export class CodexAppServerClient {
   }
 
   async metadataPreflight(input: Omit<CodexPreflightInput, "account" | "rateLimits">): Promise<PreflightResult> {
+    const observed = await observeRuntime('codex', this.options.binary);
+    input = { ...input, versionMatches: observed.versionMatches, schemaMatches: observed.schemaMatches };
     await this.connect();
     const [accountResult, limitsResult, initialConfigResult] = await Promise.all([
       this.request("account/read", { refreshToken: false }),
@@ -242,7 +263,10 @@ export class CodexAppServerClient {
         : null,
       rateLimits: limitsResult?.rateLimits
         ? {
-            structurallyTrusted: true,
+            structurallyTrusted: typeof limitsResult.rateLimits === 'object' &&
+              typeof limitsResult.rateLimits.primary?.usedPercent === 'number' &&
+              Number.isFinite(limitsResult.rateLimits.primary.usedPercent) &&
+              (limitsResult.rateLimits.credits == null || (typeof limitsResult.rateLimits.credits.hasCredits === 'boolean' && typeof limitsResult.rateLimits.credits.unlimited === 'boolean')),
             planType: limitsResult.rateLimits.planType ?? null,
             primary: limitsResult.rateLimits.primary
               ? {
@@ -281,6 +305,8 @@ export class CodexAppServerClient {
           : currentCreditBalance !== this.previousCreditBalance;
       this.previousCreditBalance = currentCreditBalance;
     }
+    result.trace.push(...observed.trace);
+    result.billing.proof.push(...observed.trace);
     this.billing = result.ok ? result.billing : null;
     return result;
   }
@@ -388,11 +414,11 @@ export class CodexAppServerClient {
     sandbox?: "read-only" | "workspace-write";
     timeoutMs?: number;
     /**
-     * Adviser profile: read-only sandbox, exact pinned model and effort,
-     * provider-side output schema, and a one-use bound authorization. The
-     * worker profile never sets these.
+     * Adviser profile: read-only sandbox, the wake-time resolved default
+     * model and effort, provider-side output schema, and a one-use bound
+     * authorization. The worker profile never sets these.
      */
-    executionProfile?: "worker" | "advisor";
+    executionProfile?: "worker" | "advisor" | "planning";
     model?: string;
     effort?: string;
     outputSchema?: Record<string, unknown>;
@@ -405,6 +431,7 @@ export class CodexAppServerClient {
     usage: { input: number; cachedInput: number; output: number; reasoning: number };
   }> {
     const advisor = input.executionProfile === "advisor";
+    const isolated = advisor || input.executionProfile === "planning";
     if (
       advisor &&
       (!input.model ||
@@ -419,14 +446,14 @@ export class CodexAppServerClient {
     const threadResult = await this.startOrResumeThread({
       ...(input.threadId ? { threadId: input.threadId } : {}),
       cwd: this.options.cwd,
-      approvalPolicy: advisor ? "never" : "on-request",
-      ...(advisor
+      approvalPolicy: isolated ? "never" : "on-request",
+      ...(isolated
         ? { sandbox: "read-only" }
         : input.sandbox
           ? { sandbox: input.sandbox }
           : {}),
       ...(input.model ? { model: input.model } : {}),
-      ...(advisor
+      ...(isolated
         ? {
             developerInstructions: input.systemPrompt,
             config: {
@@ -444,6 +471,16 @@ export class CodexAppServerClient {
     });
     const threadId = String(threadResult?.thread?.id ?? input.threadId ?? "");
     if (!threadId) throw new Error("CODEX_THREAD_ID_MISSING");
+    if (!advisor) {
+      // The thread response is the authoritative statement of the selected
+      // model and reasoning effort; surface it for live observability.
+      this.options.onIdentity?.({
+        model:
+          String(threadResult?.model ?? threadResult?.thread?.model ?? "") ||
+          null,
+        effort: String(threadResult?.reasoningEffort ?? "") || null,
+      });
+    }
     if (input.model) {
       // The thread response reports the actually selected model. Any drift
       // from the exact pinned id fails closed before the turn starts.
@@ -473,7 +510,11 @@ export class CodexAppServerClient {
     this.activeTurn = { threadId, turnId };
     let completed;
     try {
-      completed = await this.waitForTurn(turnId, input.timeoutMs ?? 10 * 60_000);
+      completed = await this.waitForTurn(
+        turnId,
+        input.timeoutMs ?? 10 * 60_000,
+        !isolated,
+      );
     } finally {
       this.activeTurn = null;
       this.activeTurnDone?.();
@@ -599,6 +640,9 @@ export class CodexAppServerClient {
 
   private async handleServerRequest(message: JsonRpcMessage): Promise<void> {
     if (!this.process || message.id === undefined || !message.method) return;
+    // Waiting on a human decision must never count as turn inactivity.
+    this.inflightServerRequests += 1;
+    this.touchTurnWaiters();
     try {
       const result = this.options.onServerRequest
         ? await this.options.onServerRequest(message)
@@ -614,6 +658,9 @@ export class CodexAppServerClient {
           },
         })}\n`,
       );
+    } finally {
+      this.inflightServerRequests -= 1;
+      this.touchTurnWaiters();
     }
   }
 
@@ -629,7 +676,7 @@ export class CodexAppServerClient {
     if (method === "item/permissions/requestApproval") {
       return { permissions: {}, scope: "turn", strictAutoReview: true };
     }
-    if (method === "item/tool/requestUserInput") return { answers: {} };
+    if (method === "item/tool/requestUserInput") throw new Error("CODEX_USER_INPUT_HANDLER_REQUIRED");
     throw new Error(`CODEX_SERVER_REQUEST_UNSUPPORTED:${method}`);
   }
 
@@ -668,23 +715,83 @@ export class CodexAppServerClient {
     waiter.resolve(message.params);
   }
 
-  private waitForTurn(turnId: string, timeoutMs: number): Promise<any> {
+  /**
+   * Worker turns run against an inactivity window: any app-server traffic
+   * resets the countdown, approval round-trips pause it, and a hard cap
+   * bounds the whole turn. Adviser wakes keep the absolute timeout so the
+   * bounded-wake budget stays enforceable (`inactivity: false`).
+   */
+  private waitForTurn(
+    turnId: string,
+    timeoutMs: number,
+    inactivity = true,
+  ): Promise<any> {
     const completed = this.completedTurns.get(turnId);
     if (completed) {
       this.completedTurns.delete(turnId);
       return Promise.resolve(completed);
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const capMs = inactivity ? Math.max(timeoutMs, 60 * 60_000) : timeoutMs;
+      const onTimeout = () => {
         this.turnWaiters.delete(turnId);
         reject(new Error(`CODEX_TURN_TIMEOUT:${turnId}`));
-      }, timeoutMs);
+      };
+      const timer = setTimeout(onTimeout, timeoutMs);
       timer.unref();
-      this.turnWaiters.set(turnId, { resolve, reject, timer });
+      this.turnWaiters.set(turnId, {
+        resolve,
+        reject,
+        timer,
+        onTimeout,
+        inactivityMs: inactivity ? timeoutMs : null,
+        capAt: Date.now() + capMs,
+      });
     });
   }
 
-  private request(method: string, params: unknown): Promise<any> {
+  private touchTurnWaiters(): void {
+    const now = Date.now();
+    for (const waiter of this.turnWaiters.values()) {
+      if (waiter.inactivityMs === null) continue;
+      const remainingCap = waiter.capAt - now;
+      if (remainingCap <= 0) continue;
+      clearTimeout(waiter.timer);
+      const window =
+        this.inflightServerRequests > 0 ? remainingCap : waiter.inactivityMs;
+      waiter.timer = setTimeout(waiter.onTimeout, Math.min(window, remainingCap));
+      waiter.timer.unref();
+    }
+  }
+
+  /**
+   * Side-effect-free metadata reads whose 30-second RPC timeout is retried
+   * before failing the run: the app server proxies these to the provider
+   * backend, and one slow round-trip must not surface as a user-facing
+   * failure card.
+   */
+  private static readonly RETRYABLE_READS = new Set([
+    "account/read",
+    "account/rateLimits/read",
+    "model/list",
+    "features/list",
+  ]);
+
+  private async request(method: string, params: unknown): Promise<any> {
+    const attempts = CodexAppServerClient.RETRYABLE_READS.has(method) ? 3 : 1;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.requestOnce(method, params);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt >= attempts || !message.startsWith("CODEX_RPC_TIMEOUT:")) {
+          throw error;
+        }
+      }
+    }
+  }
+
+  private requestOnce(method: string, params: unknown): Promise<any> {
     if (FORBIDDEN_CODEX_METHODS.has(method)) this.guard.recordForbiddenBillingMethod(method);
     if (!this.process) return Promise.reject(new Error("CODEX_NOT_CONNECTED"));
     const id = this.nextId++;

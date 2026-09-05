@@ -1,5 +1,13 @@
+import { PlanningView } from "./planning-view.tsx";
 import { useEffect, useMemo, useState } from "preact/hooks";
-import type { ActionCard, BillingStatus, ProviderRole, RunProjection } from "@collab/contracts";
+import type {
+  ActionCard,
+  AgentActivityEntry,
+  AgentModelIdentity,
+  BillingStatus,
+  ProviderRole,
+  RunProjection,
+} from "@collab/contracts";
 
 interface AdvisorView {
   enabled: boolean;
@@ -84,6 +92,36 @@ async function bootstrap(): Promise<string> {
   return body.csrf;
 }
 
+const ERROR_MESSAGES: Record<string, string> = {
+  TASK_GRANT_OUTSIDE_WORKSPACE:
+    "A task-wide grant cannot cover paths outside the workspace, so the decision was not applied. Choose “Allow once” instead.",
+  ACTION_DETAILS_REQUIRED:
+    "This action needs the details field filled in before it can be applied.",
+  ACTION_CARD_NOT_FOUND: "This card is no longer active. It may already have been decided.",
+  ACTION_RUN_MISMATCH: "This card belongs to a different collaboration run.",
+  RUN_NOT_FOUND: "The collaboration run could not be found.",
+  RUN_ALREADY_TERMINAL: "The collaboration has already ended.",
+};
+
+/**
+ * Server errors arrive as terse machine codes (possibly with a `:detail`
+ * suffix). Translate the known ones and keep the raw code visible for the
+ * rest — an unexplained failure must never render as a bare code, and it
+ * must never take down the whole dashboard.
+ */
+function describeError(code: unknown, fallback: string): string {
+  const raw = typeof code === "string" ? code : "";
+  const key = raw.split(":")[0] ?? "";
+  if (key && ERROR_MESSAGES[key]) return ERROR_MESSAGES[key];
+  if (key === "ACTION_NOT_SUPPORTED") {
+    return `The service does not support this action on this card (${raw}).`;
+  }
+  if (key === "UNKNOWN_PERMISSION_REQUEST") {
+    return "This permission card is no longer pending — the service may have restarted. Reload the page to fetch the current state.";
+  }
+  return raw ? `${fallback} The service reported: ${raw}` : fallback;
+}
+
 function BillingChip({ status }: { status: BillingStatus | undefined }) {
   if (status?.simulated) {
     return (
@@ -108,20 +146,49 @@ function BillingChip({ status }: { status: BillingStatus | undefined }) {
   );
 }
 
-function AgentLane({ role, run }: { role: ProviderRole; run: RunProjection }) {
+function AgentLane({
+  role,
+  run,
+  activity,
+  identity,
+}: {
+  role: ProviderRole;
+  run: RunProjection;
+  activity: AgentActivityEntry[];
+  identity: AgentModelIdentity | undefined;
+}) {
   const worker = run.workers[role];
+  const packets = run.packets.filter((packet) => packet.from === role);
+  const feed = activity
+    .filter((entry) => entry.runId === run.runId && entry.role === role)
+    .slice(-80);
   return (
-    <section class="lane" aria-labelledby={`${role}-heading`}>
+    <section class={`lane lane-${role}`} aria-labelledby={`${role}-heading`}>
       <header>
-        <div>
+        <div class="provider-heading">
+          <span class="provider-mark" aria-hidden="true">
+            {role === "codex" ? "C" : "A"}
+          </span>
+          <div>
           <p class="eyebrow">{role}</p>
           <h2 id={`${role}-heading`}>{role === "codex" ? "Codex" : "Claude"}</h2>
+          </div>
         </div>
         <BillingChip status={run.billing[role]} />
       </header>
       <p class="state-line">
-        <span aria-hidden="true">●</span> {worker.state.replaceAll("_", " ")}
+        <span class="state-dot" aria-hidden="true" /> {worker.state.replaceAll("_", " ")}
         {worker.activity ? ` — ${worker.activity}` : ""}
+      </p>
+      <p class="model-line">
+        Model:{" "}
+        {identity?.model ? (
+          <code>{identity.model}</code>
+        ) : (
+          "not yet reported"
+        )}
+        {" · reasoning "}
+        {identity?.effort ?? "CLI default"}
       </p>
       {worker.waitingLease ? (
         <p class="notice">
@@ -131,17 +198,44 @@ function AgentLane({ role, run }: { role: ProviderRole; run: RunProjection }) {
           {worker.waitingLease.holder}: {worker.waitingLease.reason}
         </p>
       ) : null}
-      <ol class="packet-list" aria-label={`${role} public work packets`}>
-        {run.packets
-          .filter((packet) => packet.from === role)
-          .map((packet) => (
-            <li key={packet.id}>
-              <strong>{packet.type}</strong>
-              <p>{packet.rationale}</p>
-              <small>{packet.provenance.join(" · ")}</small>
-            </li>
-          ))}
-      </ol>
+      <details class="activity-feed" open>
+        <summary>Live activity ({feed.length})</summary>
+        {feed.length ? (
+          <ol class="activity-list" aria-label={`${role} live activity`}>
+            {feed.map((entry) => (
+              <li key={entry.seq} class={`activity-${entry.kind}`}>
+                <span class="activity-kind" aria-hidden="true">
+                  {entry.kind === "tool" ? "⚙" : entry.kind === "text" ? "❝" : "·"}
+                </span>
+                <span class="activity-summary">{entry.summary}</span>
+                <time dateTime={entry.ts}>
+                  {new Date(entry.ts).toLocaleTimeString()}
+                </time>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p class="empty-copy">
+            Nothing yet this session. Tool calls and messages appear here the
+            moment the provider acts.
+          </p>
+        )}
+      </details>
+      <details class="packet-feed">
+        <summary>Work packets ({packets.length})</summary>
+        <ol class="packet-list" aria-label={`${role} public work packets`}>
+          {packets.map((packet) => (
+              <li key={packet.id}>
+                <strong class="packet-type">{packet.type}</strong>
+                <p>{packet.rationale}</p>
+                <small>{packet.provenance.join(" · ")}</small>
+              </li>
+            ))}
+        </ol>
+        {!packets.length ? (
+          <p class="empty-copy">Waiting for this provider’s first public work packet.</p>
+        ) : null}
+      </details>
     </section>
   );
 }
@@ -156,12 +250,25 @@ function ActionDrawer({
   onAction: (card: ActionCard, label: string, details?: string) => void;
 }) {
   const [details, setDetails] = useState<Record<string, string>>({});
+  // Cancelling from a reconciliation card ends the whole run; require a
+  // second, explicitly labelled click so a cleanup-minded click cannot
+  // kill a healthy collaboration.
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, Record<string,string>>>({});
+  const [armedCancel, setArmedCancel] = useState<string | null>(null);
   return (
     <aside class="actions" aria-labelledby="actions-heading">
-      <h2 id="actions-heading">Action needed ({actions.length})</h2>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Blocking the selected run</p>
+          <h2 id="actions-heading">Action needed ({actions.length})</h2>
+        </div>
+        <span class="action-count" aria-hidden="true">
+          {actions.length}
+        </span>
+      </div>
       {!actions.length ? <p>No user action is currently required.</p> : null}
       {actions.map((action) => (
-        <article key={action.id} class="action-card" tabIndex={-1}>
+        <article key={action.id} class="action-card">
           <h3>{action.title}</h3>
           <p>{action.body}</p>
           {action.command ? (
@@ -174,7 +281,11 @@ function ActionDrawer({
               <strong>Paths:</strong> {action.paths.join(", ")}
             </p>
           ) : null}
-          {action.requiresDetailsFor?.length ? (
+          {action.questions?.length ? action.questions.map(question => <label key={question.id}>{question.question}<textarea rows={2} value={questionAnswers[action.id]?.[question.id] ?? ''} onInput={event => {
+            const answers={...questionAnswers[action.id], [question.id]: event.currentTarget.value};
+            setQuestionAnswers(current=>({...current,[action.id]:answers}));
+            setDetails(current=>({...current,[action.id]: action.questions!.every(q=>answers[q.id]?.trim()) ? JSON.stringify(answers) : ''}));
+          }} />{question.options?.length ? <small>Options: {question.options.join(' / ')}</small> : null}</label>) : action.requiresDetailsFor?.length ? (
             <label class="action-details">
               {action.detailsLabel ?? "Details"}
               <textarea
@@ -194,25 +305,36 @@ function ActionDrawer({
             </label>
           ) : null}
           <div class="button-row">
-            {action.actions.map((label) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => {
-                  if (label === "Retry preflight" && action.agent) {
-                    onRetry(action.agent);
-                  } else {
+            {action.actions.map((label) => {
+              const guardedCancel =
+                label === "Cancel" && action.kind === "uncertain_effect";
+              const armed = guardedCancel && armedCancel === action.id;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  class={armed ? "danger" : undefined}
+                  onClick={() => {
+                    if (label === "Retry preflight" && action.agent) {
+                      onRetry(action.agent);
+                      return;
+                    }
+                    if (guardedCancel && !armed) {
+                      setArmedCancel(action.id);
+                      return;
+                    }
+                    setArmedCancel(null);
                     onAction(action, label, details[action.id] ?? "");
+                  }}
+                  disabled={
+                    action.requiresDetailsFor?.includes(label) === true &&
+                    !(details[action.id] ?? "").trim()
                   }
-                }}
-                disabled={
-                  action.requiresDetailsFor?.includes(label) === true &&
-                  !(details[action.id] ?? "").trim()
-                }
-              >
-                {label}
-              </button>
-            ))}
+                >
+                  {armed ? "Click again to cancel the whole run" : label}
+                </button>
+              );
+            })}
           </div>
         </article>
       ))}
@@ -221,10 +343,33 @@ function ActionDrawer({
 }
 
 export function App() {
+  const legacyDemo = new URLSearchParams(window.location.search).get("adapter") === "fake";
   const [csrf, setCsrf] = useState("");
   const [runs, setRuns] = useState<RunProjection[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  // fatalError is reserved for a dead session (bootstrap failure): nothing
+  // can render without it. Every later failure is a dismissible notice on
+  // top of a still-working dashboard.
+  const [fatalError, setFatalError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [workspace, setWorkspace] = useState("");
+  const [workspacePickerError, setWorkspacePickerError] = useState("");
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const [readableRootsText, setReadableRootsText] = useState("");
+  const [readableRootsTouched, setReadableRootsTouched] = useState(false);
+
+  // Agents almost always need to at least read the folder enclosing the
+  // workspace (monorepo root, sibling docs). Suggest it automatically so
+  // the common case needs no typing; the user can clear or replace it.
+  function applyWorkspace(path: string): void {
+    setWorkspace(path);
+    if (!legacyDemo || readableRootsTouched) return;
+    const trimmed = path.replace(/\/+$/, "");
+    const parent = trimmed.split("/").slice(0, -1).join("/");
+    setReadableRootsText(parent.includes("/") && parent !== "" ? parent : "");
+  }
+  const [creatorOpen, setCreatorOpen] = useState(false);
+  const [advisorSetupEnabled, setAdvisorSetupEnabled] = useState(false);
   const [exportOutcome, setExportOutcome] = useState<{
     runId: string;
     destination: string;
@@ -237,12 +382,67 @@ export function App() {
   const [legacyTasks, setLegacyTasks] = useState<LegacyTaskSummary[]>([]);
   const [legacyTask, setLegacyTask] = useState<LegacyTaskDetail | null>(null);
   const [advisorView, setAdvisorView] = useState<AdvisorView | null>(null);
+  const [activity, setActivity] = useState<AgentActivityEntry[]>([]);
+  const [identity, setIdentity] = useState<Record<string, AgentModelIdentity>>({});
   const selected = useMemo(
     () => runs.find((run) => run.runId === selectedRunId) ?? runs.at(0) ?? null,
     [runs, selectedRunId],
   );
+  const creatorVisible = creatorOpen || !selected;
+
+  // Backfill the transient live feed whenever the selected run changes; SSE
+  // keeps it current afterwards (entries dedupe by seq).
+  useEffect(() => {
+    const runId = selected?.runId;
+    if (!runId || !csrf) return;
+    let cancelled = false;
+    fetch(`/api/runs/${encodeURIComponent(runId)}/activity`, {
+      credentials: "same-origin",
+    })
+      .then(async (response) =>
+        response.ok ? response.json() : { entries: [], identity: {} },
+      )
+      .then(
+        (body: {
+          entries: AgentActivityEntry[];
+          identity: Partial<Record<ProviderRole, AgentModelIdentity>>;
+        }) => {
+          if (cancelled) return;
+          const entries = body.entries ?? [];
+          if (entries.length) {
+            setActivity((current) => {
+              const seen = new Set(current.map((entry) => entry.seq));
+              const merged = [
+                ...current,
+                ...entries.filter((entry) => !seen.has(entry.seq)),
+              ];
+              merged.sort((left, right) => left.seq - right.seq);
+              return merged.slice(-800);
+            });
+          }
+          for (const item of Object.values(body.identity ?? {})) {
+            if (!item) continue;
+            setIdentity((current) => ({
+              ...current,
+              [`${item.runId}:${item.role}`]: item,
+            }));
+          }
+        },
+      )
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.runId, csrf]);
   const advisorEnabled = selected?.goal?.advisor?.enabled === true;
   const advisorTriggerCount = selected?.advisor?.triggerCount ?? 0;
+  const verdictVerification = selected?.candidate?.manifest.verification ?? [];
+  const verdictVerificationPassed = verdictVerification.filter(
+    (entry) => entry.outcome === "passed",
+  ).length;
+  const verdictSignedRoles = (["codex", "claude"] as const).filter(
+    (role) => selected?.signoffs?.[role],
+  );
   // Consumed reactive wake units, mirroring AdvisorService.consumedWakeUnits:
   // only wakes that reached a guarded model start, and never the reserved
   // retrospective. advisorUsage.wakeCount counts every claimed wake (including
@@ -296,7 +496,7 @@ export function App() {
     );
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      setError(body.error ?? "The adviser request could not be recorded.");
+      setNotice(describeError(body.error, "The adviser request could not be recorded."));
     }
   }
 
@@ -344,8 +544,24 @@ export function App() {
             ...current.filter((run) => run.runId !== projection.runId),
           ]);
         });
+        events.addEventListener("activity", (event) => {
+          const entry = JSON.parse((event as MessageEvent).data) as AgentActivityEntry;
+          setActivity((current) => {
+            if (current.some((existing) => existing.seq === entry.seq)) return current;
+            return [...current.slice(-799), entry];
+          });
+        });
+        events.addEventListener("identity", (event) => {
+          const item = JSON.parse((event as MessageEvent).data) as AgentModelIdentity;
+          setIdentity((current) => ({
+            ...current,
+            [`${item.runId}:${item.role}`]: item,
+          }));
+        });
       })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : String(caught)));
+      .catch((caught) =>
+        setFatalError(caught instanceof Error ? caught.message : String(caught)),
+      );
     return () => events?.close();
   }, []);
 
@@ -364,6 +580,10 @@ export function App() {
       .split("\n")
       .map((path) => path.trim())
       .filter(Boolean);
+    const readableRoots = String(form.get("readableRoots") ?? "")
+      .split("\n")
+      .map((path) => path.trim())
+      .filter(Boolean);
     const maxDurationMinutes = Number(form.get("maxDurationMinutes"));
     const response = await fetch("/api/runs", {
       method: "POST",
@@ -374,17 +594,20 @@ export function App() {
       },
       body: JSON.stringify({
         goal: form.get("goal"),
+        workflow: legacyDemo ? "execution" : "planning",
+        completionEvidence: String(form.get("completionEvidence") ?? "").split("\n").map(s => s.trim()).filter(Boolean),
         workspace: form.get("workspace"),
         ...(Object.keys(budgets).length ? { budgets } : {}),
         attachmentPaths,
-        permissionPreset: form.get("permissionPreset"),
+        readableRoots,
+        permissionPreset: legacyDemo ? form.get("permissionPreset") : "read_only",
         stopConditions: {
           maxDurationMinutes:
             Number.isFinite(maxDurationMinutes) && maxDurationMinutes > 0
               ? maxDurationMinutes
               : null,
         },
-        resourceMode: form.get("resourceMode"),
+        resourceMode: legacyDemo ? form.get("resourceMode") : "serialized",
         ...(form.get("advisorEnabled") === "true"
           ? {
               advisor: {
@@ -402,7 +625,7 @@ export function App() {
     });
     const body = await response.json();
     if (!response.ok) {
-      setError(body.error ?? "Unable to start collaboration.");
+      setNotice(describeError(body.error, "Unable to start collaboration."));
       return;
     }
     // Fake/demo execution can publish its projection over SSE before the
@@ -413,6 +636,48 @@ export function App() {
       ...current.filter((run) => run.runId !== body.runId),
     ]);
     setSelectedRunId(body.runId);
+    setCreatorOpen(false);
+  }
+
+  async function chooseWorkspace(): Promise<void> {
+    setWorkspacePickerError("");
+    setWorkspacePickerOpen(true);
+    try {
+      const response = await fetch("/api/workspace/pick", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Collab-CSRF": csrf,
+        },
+        body: "{}",
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        const messages: Record<string, string> = {
+          DIRECTORY_PICKER_BUSY: "A folder chooser is already open.",
+          DIRECTORY_PICKER_FAILED:
+            "The folder chooser could not be opened. Enter the absolute path instead.",
+          DIRECTORY_PICKER_UNAVAILABLE:
+            "No native folder chooser is available. Enter the absolute path instead.",
+          DIRECTORY_PICKER_UNSUPPORTED_PLATFORM:
+            "This system does not provide a supported folder chooser. Enter the absolute path instead.",
+        };
+        setWorkspacePickerError(
+          messages[String(body.error)] ?? "Unable to choose a folder. Enter the absolute path instead.",
+        );
+        return;
+      }
+      if (!body.canceled && typeof body.path === "string") {
+        applyWorkspace(body.path);
+      }
+    } catch {
+      setWorkspacePickerError(
+        "The local service could not open the folder chooser. Enter the absolute path instead.",
+      );
+    } finally {
+      setWorkspacePickerOpen(false);
+    }
   }
 
   async function selectLegacyTask(id: string): Promise<void> {
@@ -422,7 +687,7 @@ export function App() {
     );
     const body = await response.json();
     if (!response.ok) {
-      setError(body.error ?? "Unable to load the legacy task.");
+      setNotice(describeError(body.error, "Unable to load the legacy task."));
       return;
     }
     setLegacyTask(body);
@@ -439,7 +704,7 @@ export function App() {
       },
       body: JSON.stringify({ provider }),
     });
-    if (!response.ok) setError("Preflight retry failed.");
+    if (!response.ok) setNotice("Preflight retry failed.");
   }
 
   async function decideAction(
@@ -462,7 +727,7 @@ export function App() {
     );
     const body = await response.json();
     if (!response.ok) {
-      setError(body.error ?? "The requested action could not be applied.");
+      setNotice(describeError(body.error, "The requested action could not be applied."));
       return;
     }
     setRuns((current) => [
@@ -484,7 +749,7 @@ export function App() {
     });
     const body = await response.json();
     if (!response.ok) {
-      setError(body.error ?? "Unable to export the collaboration.");
+      setNotice(describeError(body.error, "Unable to export the collaboration."));
       return;
     }
     setExportOutcome({ runId: selected.runId, destination: body.destination });
@@ -503,7 +768,7 @@ export function App() {
     });
     const body = await response.json();
     if (!response.ok) {
-      setError(body.error ?? "Unable to cancel the collaboration.");
+      setNotice(describeError(body.error, "Unable to cancel the collaboration."));
       return;
     }
     setRuns((current) => [
@@ -512,12 +777,12 @@ export function App() {
     ]);
   }
 
-  if (error) {
+  if (fatalError) {
     return (
       <main class="shell">
         <h1>Collaboration dashboard</h1>
         <div role="alert" class="error">
-          {error}
+          {fatalError}
         </div>
       </main>
     );
@@ -526,12 +791,31 @@ export function App() {
   return (
     <main class="shell">
       <header class="masthead">
-        <div>
-          <p class="eyebrow">Local-first · Two-provider collaboration</p>
-          <h1>Codex + Claude</h1>
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">
+            <span>C</span>
+            <span>A</span>
+          </span>
+          <div>
+            <p class="eyebrow">Local-first · Two-provider collaboration</p>
+            <h1>Codex + Claude</h1>
+            <p class="masthead-copy">
+              One question or rough idea. Two independent perspectives. A practical answer or plan.
+            </p>
+          </div>
         </div>
-        <span class="local-badge">Loopback only</span>
+        <span class="local-badge">
+          <span aria-hidden="true" /> Loopback only
+        </span>
       </header>
+      {notice ? (
+        <div role="alert" class="notice-banner">
+          <p>{notice}</p>
+          <button type="button" onClick={() => setNotice("")}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       {resourceState.degraded ? (
         <div class="resource-banner" role="status">
           Degraded mode is active. New heavy work is paused and agents will serialize at the next
@@ -539,96 +823,215 @@ export function App() {
         </div>
       ) : null}
 
-      <section class="new-run" aria-labelledby="new-run-heading">
-        <h2 id="new-run-heading">New collaboration</h2>
-        <form onSubmit={createRun}>
+      <div class={selected ? "dashboard-layout" : "dashboard-layout dashboard-layout-empty"}>
+      <section
+        class={creatorVisible ? "new-run new-run-open" : "new-run new-run-collapsed"}
+        aria-labelledby="new-run-heading"
+      >
+        <div class="section-heading new-run-heading">
+          <div>
+            <p class="eyebrow">Start something new</p>
+            <h2 id="new-run-heading">New collaboration</h2>
+          </div>
+          {selected ? (
+            <button
+              type="button"
+              class="composer-toggle"
+              aria-expanded={creatorVisible}
+              onClick={() => setCreatorOpen((open) => !open)}
+            >
+              {creatorVisible ? "Close" : "Create run"}
+            </button>
+          ) : null}
+        </div>
+        {creatorVisible ? (
+          <>
+            <p class="section-copy">
+              Describe what you want to answer, decide, or plan. An existing proposal or project folder is optional.
+            </p>
+            <form onSubmit={createRun}>
+          <div class="workspace-field">
+            <label for="workspace">Project or workspace (optional, read-only context)</label>
+            <div class="workspace-picker-row">
+              <input
+                id="workspace"
+                name="workspace"
+                type="text"
+                required={legacyDemo}
+                placeholder="/path/to/project (optional)"
+                value={workspace}
+                onInput={(event) => applyWorkspace(event.currentTarget.value)}
+                aria-describedby={
+                  workspacePickerError
+                    ? "workspace-help workspace-picker-error"
+                    : "workspace-help"
+                }
+              />
+              <button
+                type="button"
+                class="choose-folder"
+                onClick={chooseWorkspace}
+                disabled={!csrf || workspacePickerOpen}
+              >
+                {workspacePickerOpen ? "Choosing…" : "Choose folder…"}
+              </button>
+            </div>
+            <small id="workspace-help">
+              Optional: include a folder’s README and selected text files. The app manages document output.
+            </small>
+            {workspacePickerError ? (
+              <small id="workspace-picker-error" class="field-error">
+                {workspacePickerError}
+              </small>
+            ) : null}
+          </div>
           <label>
-            Project or workspace
-            <input name="workspace" type="text" required placeholder="/path/to/project" />
-          </label>
-          <label>
-            What should Codex and Claude accomplish together?
+            {legacyDemo ? "What should Codex and Claude accomplish together?" : "What would you like help answering, deciding, or planning?"}
             <textarea name="goal" rows={4} required />
           </label>
-          <details>
+          {legacyDemo ? <details class="advanced-settings">
             <summary>Advanced settings</summary>
-            <p>
+            <p class="settings-intro">
               Default: workspace-write asks on first mutation, network off,
               automatic resource scheduling, 4 challenge bursts, and 24 provider bursts.
             </p>
-            <label>
-              Permission preset
-              <select name="permissionPreset">
-                <option value="default">Default — ask before workspace mutations</option>
-                <option value="read_only">Read-only — mechanically deny mutations</option>
-              </select>
-            </label>
-            <label>
-              Resource mode
-              <select name="resourceMode">
-                <option value="automatic">Automatic — parallel unless pressure requires serialization</option>
-                <option value="serialized">Serialized — run only one provider burst at a time</option>
-              </select>
-            </label>
-            <label>
-              Stop after provider work (minutes, optional)
-              <input
-                name="maxDurationMinutes"
-                type="number"
-                min={1}
-                max={1440}
-                step={1}
-              />
-            </label>
-            <label>
-              Attachments (one workspace-contained path per line)
-              <textarea
-                name="attachmentPaths"
-                rows={3}
-                placeholder={"requirements.md\nreferences/example.png"}
-              />
-              <small>
-                Stored as path, size, media type, and SHA-256 references; file bytes are not copied
-                into the event store.
-              </small>
-            </label>
-            <label>
-              Useful-work bursts per provider (default 24)
-              <input name="perProvider" type="number" min={1} max={200} step={1} />
-            </label>
-            <label>
-              <input name="advisorEnabled" type="checkbox" value="true" /> Enable the
-              advisory supervisor (off by default; observes the run and writes
-              event-linked notes; it has zero authority)
-            </label>
-            <label>
-              Adviser provider
-              <select name="advisorProvider">
-                <option value="claude">Claude (default)</option>
-                <option value="codex">Codex</option>
-              </select>
-            </label>
-            <label>
-              Adviser effort
-              <select name="advisorEffort">
-                <option value="high">Strong (high effort, default)</option>
-                <option value="medium">Medium — economize</option>
-              </select>
-            </label>
-            <label>
-              Bursts per material challenge (default 4)
-              <input name="perMaterialChallenge" type="number" min={1} max={50} step={1} />
-            </label>
-            <p>
+            <fieldset class="settings-group">
+              <legend>Execution boundaries</legend>
+              <div class="settings-grid">
+                <label>
+                  Permission preset
+                  <select name="permissionPreset">
+                    <option value="auto" selected>
+                      Auto — workspace commands run without asking (recommended)
+                    </option>
+                    <option value="default">Ask — approve each workspace mutation</option>
+                    <option value="read_only">Read-only — mechanically deny mutations</option>
+                  </select>
+                  <small>
+                    Auto still asks before anything destructive, network-touching,
+                    installing, or outside the workspace.
+                  </small>
+                </label>
+                <label>
+                  Resource mode
+                  <select name="resourceMode">
+                    <option value="automatic">Automatic — parallel unless pressure requires serialization</option>
+                    <option value="serialized">Serialized — run only one provider burst at a time</option>
+                  </select>
+                </label>
+                <label>
+                  Stop after provider work (minutes, optional)
+                  <input
+                    name="maxDurationMinutes"
+                    type="number"
+                    min={1}
+                    max={1440}
+                    step={1}
+                  />
+                </label>
+              </div>
+            </fieldset>
+            <fieldset class="settings-group">
+              <legend>Context and budgets</legend>
+              <div class="settings-grid">
+                <label class="settings-wide">
+                  Attachments (one workspace-contained path per line)
+                  <textarea
+                    name="attachmentPaths"
+                    rows={3}
+                    placeholder={"requirements.md\nreferences/example.png"}
+                  />
+                  <small>
+                    Stored as path, size, media type, and SHA-256 references; file bytes are not copied
+                    into the event store.
+                  </small>
+                </label>
+                <label class="settings-wide">
+                  Additional read-only folders (one absolute path per line, optional)
+                  <textarea
+                    name="readableRoots"
+                    rows={2}
+                    placeholder={"/path/to/monorepo-root"}
+                    value={readableRootsText}
+                    onInput={(event) => {
+                      setReadableRootsTouched(true);
+                      setReadableRootsText(event.currentTarget.value);
+                    }}
+                  />
+                  <small>
+                    Prefilled with the folder above the workspace so parent-repo
+                    reads need no approval. Reads here proceed without a card;
+                    writing stays limited to the workspace.
+                  </small>
+                </label>
+                <label>
+                  Useful-work bursts per provider (default 24)
+                  <input name="perProvider" type="number" min={1} max={200} step={1} />
+                </label>
+                <label>
+                  Bursts per material challenge (default 4)
+                  <input name="perMaterialChallenge" type="number" min={1} max={50} step={1} />
+                </label>
+              </div>
+            </fieldset>
+            <fieldset class="settings-group advisor-settings">
+              <legend>Optional adviser</legend>
+              <label class="toggle-row">
+                <input
+                  name="advisorEnabled"
+                  type="checkbox"
+                  value="true"
+                  checked={advisorSetupEnabled}
+                  onChange={(event) => setAdvisorSetupEnabled(event.currentTarget.checked)}
+                />
+                <span>
+                  Enable the advisory supervisor
+                  <small>
+                    Off by default. It observes the run and writes event-linked notes with zero authority.
+                  </small>
+                </span>
+              </label>
+              {advisorSetupEnabled ? (
+                <div class="settings-grid advisor-options">
+                  <label>
+                    Adviser provider
+                    <select name="advisorProvider">
+                      <option value="claude">Claude (default)</option>
+                      <option value="codex">Codex</option>
+                    </select>
+                  </label>
+                  <label>
+                    Adviser effort
+                    <select name="advisorEffort">
+                      <option value="high">Strong (high effort, default)</option>
+                      <option value="medium">Medium — economize</option>
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+            </fieldset>
+            <p class="settings-footnote">
               Starting a normal collaboration authorizes bounded provider turns only after both
               subscription billing routes are proven. The dashboard labels allowance versus
               existing-credit usage before the first turn.
             </p>
-          </details>
-          <button class="primary" type="submit" disabled={!csrf}>
-            Start collaboration
-          </button>
-        </form>
+          </details> : <details class="advanced-settings">
+            <summary>Context and limits</summary>
+            <p>Read-only sources, no provider tools, adviser off. Both providers see the same saved context. One revision cycle, with one optional final cycle for a specific issue.</p>
+            <label>Selected text files (one path within the optional project per line)<textarea name="attachmentPaths" rows={3} placeholder="requirements.md" /></label>
+            <small>Text snapshots are redacted, bounded, and stored with this run. Binary files and oversized files are omitted with an explanation.</small>
+            <label>Required conditions (optional, one per line)<textarea name="completionEvidence" rows={3} /></label>
+            <label>Provider calls per provider (default 9)<input name="perProvider" type="number" min={1} max={12} /></label>
+            <label>Stop after provider work (minutes, default 12)<input name="maxDurationMinutes" type="number" min={1} max={30} /></label>
+          </details>}
+              <button class="primary" type="submit" disabled={!csrf}>
+                Start collaboration
+              </button>
+            </form>
+          </>
+        ) : (
+          <p class="creator-hint">The active run stays in focus. Open this panel when you need another.</p>
+        )}
       </section>
 
       {resourceState.legacyTasksEnabled ? (
@@ -738,115 +1141,285 @@ export function App() {
       ) : null}
 
       {selected ? (
-        <>
+        <div class="run-workspace">
           <section class="run-header" aria-labelledby="run-goal-heading">
-            <div>
-              <p class="eyebrow">Immutable goal</p>
-              <h2 id="run-goal-heading">{selected.goal?.goal}</h2>
+            <div class="run-title-row">
+              <div>
+                <p class="eyebrow">Active collaboration</p>
+                <h2 id="run-goal-heading">{selected.goal?.goal}</h2>
+              </div>
+              <div class="run-primary-actions">
+                <span class="chip state-chip">{selected.planning && selected.completedAt && selected.state !== "cancelled" ? (selected.planning.status === "ready" ? "Reviewed answer" : "Partial result") : selected.state.replaceAll("_", " ")}</span>
+                {!selected.completedAt ? (
+                  <button type="button" onClick={cancelRun}>
+                    Cancel
+                  </button>
+                ) : (
+                  <button type="button" onClick={exportRun}>
+                    Export run
+                  </button>
+                )}
+              </div>
             </div>
-            <div class="run-meta">
-              <span class="chip">{selected.state.replaceAll("_", " ")}</span>
-              <span
-                class={
-                  selected.overhead == null
-                    ? "chip"
-                    : selected.overhead.passed
-                      ? "chip chip-overhead-pass"
-                      : selected.overhead.provisional
-                        ? "chip chip-overhead-provisional-fail"
-                        : "chip chip-overhead-fail"
-                }
-                title={
-                  selected.overhead
-                    ? `${selected.overhead.gateVersion ?? "overhead gate"}: ${
-                        selected.overhead.workerBurstCount ?? 0
-                      } worker bursts; coordination tokens ${
-                        selected.overhead.coordinationTokenUpper ?? 0
-                      }; mixed coordinator bytes ${
-                        selected.overhead.mixedCoordinatorBytes ?? 0
-                      } of ${selected.overhead.absoluteAllowanceBytes ?? 0} allowed`
-                    : undefined
-                }
-              >
-                Worker-loop overhead:{" "}
-                {selected.overhead?.ratio != null
-                  ? `${selected.overhead.ratio.toFixed(4)}×`
-                  : selected.overhead
-                    ? "no positive useful-work bound yet"
-                    : "no usage yet"}
-                {selected.overhead
-                  ? selected.overhead.passed
-                    ? selected.overhead.passedBy === "absolute"
-                      ? " · within the small-run byte allowance"
-                      : " · within 1.05×"
-                    : selected.overhead.provisional
-                      ? " · provisional — may still recover"
-                      : " · gate failed"
-                  : ""}
-              </span>
-              <span class="chip">
-                Sandbox:{" "}
-                {selected.goal?.authority.permissionPreset === "read_only"
-                  ? "read-only"
-                  : "workspace-write"}
-              </span>
-              <span class="chip">
-                Resources: {selected.goal?.resourceMode ?? "automatic"}
-              </span>
-              {selected.goal?.stopConditions?.maxDurationMinutes ? (
-                <span class="chip">
-                  Stop: {selected.goal.stopConditions.maxDurationMinutes} min
-                </span>
-              ) : null}
-              {!selected.completedAt ? (
-                <button type="button" onClick={cancelRun}>
-                  Cancel collaboration
-                </button>
-              ) : (
-                <button type="button" onClick={exportRun}>
-                  Export run
-                </button>
-              )}
+            <div class="run-snapshot" aria-label="Collaboration snapshot">
+              <div>
+                <span>Codex</span>
+                <strong>{selected.workers.codex.state.replaceAll("_", " ")}</strong>
+              </div>
+              <div>
+                <span>Claude</span>
+                <strong>{selected.workers.claude.state.replaceAll("_", " ")}</strong>
+              </div>
+              <div>
+                <span>Action queue</span>
+                <strong>
+                  {selected.actions.length
+                    ? `${selected.actions.length} waiting`
+                    : "Clear"}
+                </strong>
+              </div>
+              <div>
+                <span>Shared outcome</span>
+                <strong>
+                  {selected.planning ? (selected.planning.documents.length ? "Document available" : "Pending") : selected.candidate
+                    ? "Candidate available"
+                    : selected.completedAt
+                      ? "Completed"
+                      : "In progress"}
+                </strong>
+              </div>
             </div>
             {exportOutcome && exportOutcome.runId === selected.runId ? (
               <p class="export-note">
-                Exported events, transcript, and projection with checksums to{" "}
+                Exported document (when available), events, and review history with checksums to{" "}
                 <code>{exportOutcome.destination}</code>
               </p>
             ) : null}
-            {selected.overheadNotice ? (
-              <p class="overhead-notice">
-                Worker-loop overhead gate breached at a stable boundary (
-                {selected.overheadNotice.boundary.replaceAll("_", " ")}):{" "}
-                {selected.overheadNotice.ratio != null
-                  ? `${selected.overheadNotice.ratio.toFixed(4)}× of the 1.05× ceiling`
-                  : "no positive useful-work lower bound"}
-                , {selected.overheadNotice.mixedCoordinatorBytes} coordinator
-                bytes of {selected.overheadNotice.absoluteAllowanceBytes}{" "}
-                allowed across {selected.overheadNotice.workerBurstCount} worker
-                bursts. This notice is informational and required no action;
-                the run was never interrupted by it.
-              </p>
-            ) : null}
-            {selected.goal?.attachments?.length ? (
-              <details class="run-attachments">
-                <summary>
-                  Attachments ({selected.goal.attachments.length} immutable references)
-                </summary>
-                <ul>
-                  {selected.goal.attachments.map((attachment) => (
-                    <li key={`${attachment.path}:${attachment.sha256}`}>
-                      <code>{attachment.path}</code> · {attachment.size} bytes ·{" "}
-                      {attachment.mediaType} · <code>{attachment.sha256}</code>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
+            <details class="run-details">
+              <summary>
+                <span>Run details</span>
+                <small>Permissions, resources, limits, and diagnostics</small>
+              </summary>
+              <div class="run-details-body">
+                <div class="run-meta">
+                  <span
+                    class={
+                      selected.overhead == null
+                        ? "chip"
+                        : selected.overhead.passed
+                          ? "chip chip-overhead-pass"
+                          : selected.overhead.provisional
+                            ? "chip chip-overhead-provisional-fail"
+                            : "chip chip-overhead-fail"
+                    }
+                    title={
+                      selected.overhead
+                        ? `${selected.overhead.gateVersion ?? "overhead gate"}: ${
+                            selected.overhead.workerBurstCount ?? 0
+                          } worker bursts; coordination tokens ${
+                            selected.overhead.coordinationTokenUpper ?? 0
+                          }; mixed coordinator bytes ${
+                            selected.overhead.mixedCoordinatorBytes ?? 0
+                          } of ${selected.overhead.absoluteAllowanceBytes ?? 0} allowed`
+                        : undefined
+                    }
+                  >
+                    Worker-loop overhead:{" "}
+                    {selected.overhead?.ratio != null
+                      ? `${selected.overhead.ratio.toFixed(4)}×`
+                      : selected.overhead
+                        ? "no positive useful-work bound yet"
+                        : "no usage yet"}
+                    {selected.overhead
+                      ? selected.overhead.passed
+                        ? selected.overhead.passedBy === "absolute"
+                          ? " · within the small-run byte allowance"
+                          : " · within 1.05×"
+                        : selected.overhead.provisional
+                          ? " · provisional — may still recover"
+                          : " · gate failed"
+                      : ""}
+                  </span>
+                  <span class="chip">
+                    Sandbox:{" "}
+                    {selected.goal?.authority.permissionPreset === "read_only"
+                      ? "read-only"
+                      : selected.goal?.authority.permissionPreset === "auto"
+                        ? "auto workspace-write"
+                        : "workspace-write"}
+                  </span>
+                  <span class="chip">
+                    Resources: {selected.goal?.resourceMode ?? "automatic"}
+                  </span>
+                  {selected.goal?.stopConditions?.maxDurationMinutes ? (
+                    <span class="chip">
+                      Stop: {selected.goal.stopConditions.maxDurationMinutes} min
+                    </span>
+                  ) : null}
+                </div>
+                {selected.overheadNotice ? (
+                  <p class="overhead-notice">
+                    Worker-loop overhead gate breached at a stable boundary (
+                    {selected.overheadNotice.boundary.replaceAll("_", " ")}):{" "}
+                    {selected.overheadNotice.ratio != null
+                      ? `${selected.overheadNotice.ratio.toFixed(4)}× of the 1.05× ceiling`
+                      : "no positive useful-work lower bound"}
+                    , {selected.overheadNotice.mixedCoordinatorBytes} coordinator
+                    bytes of {selected.overheadNotice.absoluteAllowanceBytes}{" "}
+                    allowed across {selected.overheadNotice.workerBurstCount} worker
+                    bursts. This notice is informational and required no action;
+                    the run was never interrupted by it.
+                  </p>
+                ) : null}
+                {selected.goal?.attachments?.length ? (
+                  <details class="run-attachments">
+                    <summary>
+                      Attachments ({selected.goal.attachments.length} immutable references)
+                    </summary>
+                    <ul>
+                      {selected.goal.attachments.map((attachment) => (
+                        <li key={`${attachment.path}:${attachment.sha256}`}>
+                          <code>{attachment.path}</code> · {attachment.size} bytes ·{" "}
+                          {attachment.mediaType} · <code>{attachment.sha256}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
+            </details>
           </section>
+          {selected.actions.length ? (
+            <ActionDrawer
+              actions={selected.actions}
+              onRetry={retryPreflight}
+              onAction={decideAction}
+            />
+          ) : null}
+          {selected.planning ? <PlanningView key={selected.runId} run={selected} onExport={exportRun} /> : <>
+          {selected.completedAt ? (
+            <section
+              class={`verdict verdict-${selected.state}`}
+              aria-labelledby="verdict-heading"
+            >
+              <p class="eyebrow">Conclusion</p>
+              {selected.state === "completed_consensus" ? (
+                <>
+                  <h2 id="verdict-heading">
+                    Consensus reached — both models signed the same result
+                  </h2>
+                  <p>
+                    Both providers signed the same recorded outcome manifest. Review and recorded checks support assessment of the result; they do not establish that every claim is true.
+                  </p>
+                  {selected.candidate ? (
+                    <ul class="verdict-facts">
+                      <li>
+                        <strong>
+                          {selected.candidate.manifest.artifacts.length}
+                        </strong>{" "}
+                        files delivered in the workspace
+                      </li>
+                      <li>
+                        <strong>
+                          {verdictVerificationPassed}/{verdictVerification.length}
+                        </strong>{" "}
+                        verification checks passed
+                      </li>
+                      <li>
+                        <strong>
+                          {selected.candidate.manifest.evidenceLedger.length}
+                        </strong>{" "}
+                        evidence entries ·{" "}
+                        <strong>
+                          {selected.candidate.manifest.knownLimitations.length}
+                        </strong>{" "}
+                        known limitations recorded honestly
+                      </li>
+                      <li>
+                        Signed by{" "}
+                        <strong>{verdictSignedRoles.join(" and ") || "—"}</strong>
+                      </li>
+                    </ul>
+                  ) : null}
+                  {selected.candidate?.manifest.artifacts.length ? (
+                    <div class="verdict-artifacts">
+                      <h3>What they delivered</h3>
+                      <ul>
+                        {selected.candidate.manifest.artifacts
+                          .slice(0, 8)
+                          .map((artifact) => (
+                            <li key={`verdict-${artifact.path}`}>
+                              <code>{artifact.path}</code>
+                            </li>
+                          ))}
+                        {selected.candidate.manifest.artifacts.length > 8 ? (
+                          <li>
+                            …and{" "}
+                            {selected.candidate.manifest.artifacts.length - 8} more
+                            in the shared outcome section below.
+                          </li>
+                        ) : null}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {verdictSignedRoles.some(
+                    (role) => selected.signoffs?.[role]?.rationale,
+                  ) ? (
+                    <div class="verdict-rationales">
+                      <h3>Why each model signed</h3>
+                      {verdictSignedRoles.map((role) =>
+                        selected.signoffs?.[role]?.rationale ? (
+                          <p key={`rationale-${role}`}>
+                            <strong>{role === "codex" ? "Codex" : "Claude"}:</strong>{" "}
+                            {selected.signoffs[role]!.rationale}
+                          </p>
+                        ) : null,
+                      )}
+                    </div>
+                  ) : null}
+                  <p class="verdict-next">
+                    The delivered files are already live in your workspace — no
+                    further action is needed to apply them. Use “Export run” above
+                    for the complete audited record (events, transcript,
+                    checksums), or start a new collaboration for the next goal.
+                    Each model’s full analysis is in its lane’s work packets.
+                  </p>
+                </>
+              ) : selected.state === "completed_disagreement" ? (
+                <>
+                  <h2 id="verdict-heading">
+                    Ended with a recorded disagreement
+                  </h2>
+                  <p>
+                    The models could not converge on one result. No consensus was
+                    manufactured: both positions are preserved verbatim in the
+                    work packets and in the export.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 id="verdict-heading">Collaboration cancelled</h2>
+                  <p>
+                    The run ended before a shared outcome. Any workspace changes
+                    made before cancellation remain on disk for inspection.
+                  </p>
+                </>
+              )}
+            </section>
+          ) : null}
           <div class="lanes">
-            <AgentLane role="codex" run={selected} />
-            <AgentLane role="claude" run={selected} />
+            <AgentLane
+              role="codex"
+              run={selected}
+              activity={activity}
+              identity={identity[`${selected.runId}:codex`]}
+            />
+            <AgentLane
+              role="claude"
+              run={selected}
+              activity={activity}
+              identity={identity[`${selected.runId}:claude`]}
+            />
           </div>
           {advisorEnabled ? (
             <section class="lane advisor-lane" aria-labelledby="advisor-heading">
@@ -861,6 +1434,27 @@ export function App() {
                   {selected.goal?.advisor?.effort === "medium" ? "medium effort" : "strong (high effort)"}
                 </span>
               </header>
+              <p class="model-line">
+                Model:{" "}
+                {(() => {
+                  const lastObservation = (advisorView?.ledger ?? [])
+                    .filter((row) => row.kind === "observation")
+                    .at(-1);
+                  const payload = lastObservation?.payload as
+                    | { model?: string; effort?: string }
+                    | undefined;
+                  return payload?.model ? (
+                    <>
+                      <code>{payload.model}</code>
+                      {" · reasoning "}
+                      {payload.effort ?? selected.goal?.advisor?.effort ?? "high"}
+                      {" (provider default row, resolved per wake)"}
+                    </>
+                  ) : (
+                    "resolved from the provider's default row at the first wake"
+                  );
+                })()}
+              </p>
               <p class="state-line">
                 Wakes used:{" "}
                 {reactiveWakesUsed} of{" "}
@@ -979,71 +1573,70 @@ export function App() {
               </div>
             </dl>
             {selected.candidate ? (
-              <div class="manifest-details">
-                <h3>Artifacts</h3>
-                {selected.candidate.manifest.artifacts.length ? (
+              <details class="manifest-details">
+                <summary>View candidate verification manifest</summary>
+                <div class="manifest-body">
+                  <h3>Artifacts</h3>
+                  {selected.candidate.manifest.artifacts.length ? (
+                    <ul>
+                      {selected.candidate.manifest.artifacts.map((artifact) => (
+                        <li key={`${artifact.path}:${artifact.sha256}`}>
+                          <code>{artifact.path}</code> — {artifact.mediaType} —{" "}
+                          <code>{artifact.sha256}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>No artifact was declared.</p>
+                  )}
+                  <h3>Evidence ledger</h3>
+                  {selected.candidate.manifest.evidenceLedger.length ? (
+                    <ul>
+                      {selected.candidate.manifest.evidenceLedger.map((entry, index) => (
+                        <li key={`evidence-${index}`}>{entry}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>No evidence entries were recorded.</p>
+                  )}
+                  <h3>Verification ledger</h3>
                   <ul>
-                    {selected.candidate.manifest.artifacts.map((artifact) => (
-                      <li key={`${artifact.path}:${artifact.sha256}`}>
-                        <code>{artifact.path}</code> — {artifact.mediaType} —{" "}
-                        <code>{artifact.sha256}</code>
+                    {selected.candidate.manifest.verification.map((entry, index) => (
+                      <li key={`${entry.command}:${index}`}>
+                        <strong>{entry.outcome}</strong> — <code>{entry.command}</code>
+                        <p>{entry.evidence}</p>
                       </li>
                     ))}
                   </ul>
-                ) : (
-                  <p>No artifact was declared.</p>
-                )}
-                <h3>Evidence ledger</h3>
-                {selected.candidate.manifest.evidenceLedger.length ? (
-                  <ul>
-                    {selected.candidate.manifest.evidenceLedger.map((entry, index) => (
-                      <li key={`evidence-${index}`}>{entry}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>No evidence entries were recorded.</p>
-                )}
-                <h3>Verification ledger</h3>
-                <ul>
-                  {selected.candidate.manifest.verification.map((entry, index) => (
-                    <li key={`${entry.command}:${index}`}>
-                      <strong>{entry.outcome}</strong> — <code>{entry.command}</code>
-                      <p>{entry.evidence}</p>
-                    </li>
-                  ))}
-                </ul>
-                {selected.candidate.manifest.knownLimitations.length ? (
-                  <>
-                    <h3>Known limitations</h3>
-                    <ul>
-                      {selected.candidate.manifest.knownLimitations.map((limitation) => (
-                        <li key={limitation}>{limitation}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-                <p>
-                  <strong>Manifest digest:</strong>{" "}
-                  <code>{selected.candidate.digest}</code>
-                </p>
-                <p>
-                  <strong>Verification digest:</strong>{" "}
-                  <code>{selected.candidate.verificationDigest}</code>
-                </p>
-              </div>
+                  {selected.candidate.manifest.knownLimitations.length ? (
+                    <>
+                      <h3>Known limitations</h3>
+                      <ul>
+                        {selected.candidate.manifest.knownLimitations.map((limitation) => (
+                          <li key={limitation}>{limitation}</li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                  <p>
+                    <strong>Manifest digest:</strong>{" "}
+                    <code>{selected.candidate.digest}</code>
+                  </p>
+                  <p>
+                    <strong>Verification digest:</strong>{" "}
+                    <code>{selected.candidate.verificationDigest}</code>
+                  </p>
+                </div>
+              </details>
             ) : null}
           </section>
-          <ActionDrawer
-            actions={selected.actions}
-            onRetry={retryPreflight}
-            onAction={decideAction}
-          />
+          </>}
           <div class="sr-status" role="status" aria-live="polite">
             Collaboration state changed to {selected.state.replaceAll("_", " ")}.
           </div>
-        </>
+        </div>
       ) : (
-        <section class="empty" aria-live="polite">
+        <section class="empty empty-start" aria-live="polite">
           <h2>No collaborations yet</h2>
           <p>
             Enter one goal above. Both providers must pass subscription and billing-route preflight
@@ -1051,6 +1644,7 @@ export function App() {
           </p>
         </section>
       )}
+      </div>
     </main>
   );
 }

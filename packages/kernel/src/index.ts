@@ -6,3 +6,5 @@ export * from "./overhead.ts";
 export * from "./projection.ts";
 export * from "./queue.ts";
 export * from "./store.ts";
+
+export * from "./documents.ts";

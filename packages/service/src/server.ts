@@ -8,6 +8,11 @@ import {
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, extname, join, normalize } from "node:path";
 import { URL } from "node:url";
+import type {
+  AgentActivityEntry,
+  AgentModelIdentity,
+  ProviderRole,
+} from "@collab/contracts";
 import { EventStore } from "@collab/kernel";
 import {
   exportRun,
@@ -17,6 +22,7 @@ import {
 import { redactSecrets } from "@collab/security";
 import { CapabilitySessions, parseCookies, sessionCookie } from "./auth.ts";
 import { Coordinator, type CreateRunInput } from "./coordinator.ts";
+import { pickNativeDirectory } from "./directory-picker.ts";
 import { composeModelAccounting } from "./advisor/accounting.ts";
 import { ProviderExecutionGate } from "./advisor/execution-gate.ts";
 import { AdvisorNotes } from "./advisor/notes.ts";
@@ -33,6 +39,7 @@ const CSP =
 
 export interface CollabServerOptions {
   stateFile: string;
+  planning?: import("./planning-runner.ts").PlanningOptions;
   uiDirectory?: string;
   /**
    * Enables the read-only legacy browser for immediate child task folders.
@@ -43,6 +50,11 @@ export interface CollabServerOptions {
   sessionLifetimeMs?: number;
   codexBinary?: string;
   environment?: NodeJS.ProcessEnv;
+  /**
+   * Opens the host's native project/workspace folder chooser. Tests can
+   * provide a deterministic implementation without opening desktop UI.
+   */
+  directoryPicker?: () => Promise<string | null>;
   /**
    * Enables the deterministic `fixture` parameter on the retry-preflight
    * route. Off by default: the shipped API must not accept fabricated
@@ -126,7 +138,56 @@ export function createCollabServer(options: CollabServerOptions) {
     },
   });
   const resources = new ResourceGovernor();
+  const directoryPicker = options.directoryPicker ?? pickNativeDirectory;
+  let directoryPickerActive = false;
   const subscribers = new Set<ServerResponse>();
+  // Transient live-observability feed: bounded per-run ring, streamed over
+  // SSE, gone on restart by design (the event log stays the durable record).
+  const activityByRun = new Map<string, AgentActivityEntry[]>();
+  let activitySeq = 0;
+  function publishActivity(
+    runId: string,
+    activity: { role: ProviderRole; kind: "tool" | "text" | "status"; summary: string },
+  ): void {
+    const entry: AgentActivityEntry = {
+      seq: ++activitySeq,
+      ts: new Date().toISOString(),
+      runId,
+      role: activity.role,
+      kind: activity.kind,
+      summary: redactSecrets(activity.summary).slice(0, 400),
+    };
+    const ring = activityByRun.get(runId) ?? [];
+    ring.push(entry);
+    if (ring.length > 500) ring.splice(0, ring.length - 500);
+    activityByRun.set(runId, ring);
+    const payload = `event: activity\ndata: ${JSON.stringify(entry)}\n\n`;
+    for (const subscriber of subscribers) subscriber.write(payload);
+  }
+  const identityByRun = new Map<
+    string,
+    Partial<Record<ProviderRole, AgentModelIdentity>>
+  >();
+  function publishIdentity(
+    runId: string,
+    identity: { role: ProviderRole; model: string | null; effort: string | null },
+  ): void {
+    const forRun = identityByRun.get(runId) ?? {};
+    const previous = forRun[identity.role];
+    // Partial updates merge: a reroute reports only the model; the effort
+    // observed at thread start stays authoritative until restated.
+    const merged: AgentModelIdentity = {
+      runId,
+      role: identity.role,
+      model: identity.model ?? previous?.model ?? null,
+      effort: identity.effort ?? previous?.effort ?? null,
+      observedAt: new Date().toISOString(),
+    };
+    forRun[identity.role] = merged;
+    identityByRun.set(runId, forRun);
+    const payload = `event: identity\ndata: ${JSON.stringify(merged)}\n\n`;
+    for (const subscriber of subscribers) subscriber.write(payload);
+  }
   let actualPort = 0;
   let memoryPressure: ResourceSample["memoryPressure"] = "unknown";
   const refreshMemoryPressure = async () => {
@@ -220,10 +281,13 @@ export function createCollabServer(options: CollabServerOptions) {
   });
   store.appendListener = (event) => advisorService.noteEvent(event);
   const coordinator = new Coordinator(store, {
+    ...(options.planning ? { planning: options.planning } : {}),
     codexBinary,
     ...(options.environment ? { environment: options.environment } : {}),
     resourceState: () => resources.current(),
     publish,
+    publishActivity,
+    publishIdentity,
     advisor: {
       hooks: {
         noteProviderRuntimeActivity: (runId, role) =>
@@ -289,6 +353,26 @@ export function createCollabServer(options: CollabServerOptions) {
         });
         return;
       }
+      if (request.method === "POST" && url.pathname === "/api/workspace/pick") {
+        sessionFor(request, true);
+        if (directoryPickerActive) throw new Error("DIRECTORY_PICKER_BUSY");
+        directoryPickerActive = true;
+        try {
+          const selected = await directoryPicker();
+          if (selected === null) {
+            json(response, 200, { canceled: true });
+            return;
+          }
+          const path = realpathSync(selected);
+          if (!statSync(path).isDirectory()) {
+            throw new Error("DIRECTORY_PICKER_NOT_DIRECTORY");
+          }
+          json(response, 200, { canceled: false, path });
+        } finally {
+          directoryPickerActive = false;
+        }
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/api/legacy-tasks") {
         sessionFor(request);
         if (!legacyTasksRoot) {
@@ -338,6 +422,16 @@ export function createCollabServer(options: CollabServerOptions) {
           return;
         }
         json(response, 200, projection);
+        return;
+      }
+      const activityMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/activity$/);
+      if (request.method === "GET" && activityMatch) {
+        sessionFor(request);
+        const activityRunId = decodeURIComponent(activityMatch[1]!);
+        json(response, 200, {
+          entries: activityByRun.get(activityRunId) ?? [],
+          identity: identityByRun.get(activityRunId) ?? {},
+        });
         return;
       }
       const retryMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/retry-preflight$/);
@@ -521,6 +615,7 @@ export function createCollabServer(options: CollabServerOptions) {
     async close(): Promise<void> {
       clearInterval(resourceInterval);
       clearInterval(memoryPressureInterval);
+      await coordinator.shutdown();
       await advisorService.shutdown();
       for (const subscriber of subscribers) subscriber.end();
       await new Promise<void>((resolve) => server.close(() => resolve()));

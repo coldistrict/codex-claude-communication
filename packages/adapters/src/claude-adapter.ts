@@ -17,6 +17,9 @@ import {
   type PreflightResult,
 } from "./policy.ts";
 
+import { observeRuntime } from './runtime.ts';
+import { redactSecrets } from '@collab/security';
+
 const execFileAsync = promisify(execFile);
 
 export function bundledClaudeCliPath(): string {
@@ -99,14 +102,9 @@ export function parseClaudeBillingUsage(
       ? utilizations.every((utilization) => (utilization as number) < 100)
       : null;
   const extra = rateLimits?.extra_usage;
-  const existingCreditsRemaining =
-    extra?.is_enabled === true &&
-    typeof extra.monthly_limit === "number" &&
-    typeof extra.used_credits === "number"
-      ? extra.used_credits < extra.monthly_limit
-      : extra?.is_enabled === true && typeof extra?.utilization === "number"
-        ? extra.utilization < 100
-        : null;
+  // A monthly spending limit is not proof of a funded prepaid balance.
+  // The observed experimental payload has no verified prepaid-balance field.
+  const existingCreditsRemaining: boolean | null = null;
   const currentRoute =
     includedUsageRemaining === true
       ? "subscription_allowance"
@@ -156,18 +154,23 @@ export class ClaudeAgentAdapter {
   async metadataPreflight(
     input: Omit<ClaudePreflightInput, "auth" | "billing">,
   ): Promise<PreflightResult> {
+    const observed = await observeRuntime('claude', bundledClaudeCliPath());
+    input = { ...input, versionMatches: observed.versionMatches, sdkMatches: observed.sdkMatches };
+    const diagnostics: string[] = [];
     let auth: Record<string, any> | null = null;
     let account: Record<string, any> | null = null;
     let usage: Record<string, any> | null = null;
     try {
       auth = await this.authStatus();
-    } catch {
+    } catch (error) {
+      diagnostics.push(`auth/status: ${redactSecrets(String(error)).slice(0,1500)}`);
       auth = null;
     }
     if (auth?.loggedIn) {
       try {
         ({ account, usage } = await this.controlMetadata());
-      } catch {
+      } catch (error) {
+        diagnostics.push(`control metadata: ${redactSecrets(String(error)).slice(0,1500)}`);
         account = null;
         usage = null;
       }
@@ -197,6 +200,12 @@ export class ClaudeAgentAdapter {
         ...billing,
       },
     });
+    if (diagnostics.length) {
+      result.trace.push(...diagnostics);
+      if (!auth) { result.predicate = 'claude.auth_metadata_unavailable'; result.remedy = 'The official auth-status probe failed. Check the redacted diagnostics and retry; this does not establish a missing login.'; result.billing.blockingPredicate = result.predicate; result.billing.remedy = result.remedy; }
+    }
+    result.trace.push(...observed.trace);
+    result.billing.proof.push(...observed.trace, ...diagnostics);
     this.billing = result.ok ? result.billing : null;
     return result;
   }
@@ -269,10 +278,11 @@ export class ClaudeAgentAdapter {
     readOnly?: boolean;
     /**
      * Adviser profile: no tools, no MCP/skills/subagents/web, no permission
-     * callback, dontAsk, maxTurns 1, exact pinned model and effort, and a
-     * one-use bound authorization. The worker profile never sets these.
+     * callback, dontAsk, maxTurns 1, the wake-time resolved default model
+     * and effort, and a one-use bound authorization. The worker profile
+     * never sets these.
      */
-    executionProfile?: "worker" | "advisor";
+    executionProfile?: "worker" | "advisor" | "planning";
     model?: string;
     effort?: string;
     advisorContext?: AdvisorStartContext;
@@ -296,33 +306,103 @@ export class ClaudeAgentAdapter {
     ) {
       throw new Error("CLAUDE_ADVISOR_PROFILE_INCOMPLETE");
     }
-    this.guard.authorize("claude", input.runId, input.authorization, input.advisorContext);
+
     const scrubbed = scrubProviderEnvironment(this.options.env ?? process.env);
     const messages: unknown[] = [];
     let sessionId: string | null = input.sessionId ?? null;
     let text = "";
     let structuredOutput: unknown;
     let usage = { input: 0, cachedInput: 0, output: 0, reasoning: 0 };
+    // A worker burst that exhausts its turn budget mid-work resumes its own
+    // session with a fresh budget instead of failing into lease
+    // reconciliation — the budget bounds one SDK call, not the work item.
+    // Two continuations at most; adviser wakes (maxTurns 1 by design) and
+    // sessions that never reported an id keep the hard-failure semantics.
+    // Usage is reported from the completing call only, which can only
+    // understate useful work and therefore tightens the overhead gate.
+    let prompt = input.prompt;
+    let continuations = 0;
+    while (true) {
+      try {
+        return await this.runBurstOnce(input, advisor, scrubbed.env, prompt, sessionId, messages, {
+          setSession: (id) => {
+            sessionId = id;
+          },
+          setOutcome: (burstText, burstStructured, burstUsage) => {
+            text = burstText;
+            structuredOutput = burstStructured;
+            usage = burstUsage;
+          },
+          getOutcome: () => ({ sessionId, text, structuredOutput, usage }),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          advisor || input.executionProfile === "planning" ||
+          continuations >= 2 ||
+          !sessionId ||
+          !message.includes("Reached maximum number of turns")
+        ) {
+          throw error;
+        }
+        continuations += 1;
+        prompt =
+          "The previous turn budget ran out mid-work. Continue in this same session exactly where you stopped and finish by producing the required structured output.";
+      }
+    }
+  }
+
+  private async runBurstOnce(
+    input: Parameters<ClaudeAgentAdapter["startBurst"]>[0],
+    advisor: boolean,
+    env: NodeJS.ProcessEnv,
+    prompt: string,
+    resumeSessionId: string | null,
+    messages: unknown[],
+    sink: {
+      setSession: (id: string) => void;
+      setOutcome: (
+        text: string,
+        structuredOutput: unknown,
+        usage: { input: number; cachedInput: number; output: number; reasoning: number },
+      ) => void;
+      getOutcome: () => {
+        sessionId: string | null;
+        text: string;
+        structuredOutput: unknown;
+        usage: { input: number; cachedInput: number; output: number; reasoning: number };
+      };
+    },
+  ): Promise<{
+    sessionId: string | null;
+    messages: unknown[];
+    text: string;
+    structuredOutput: unknown;
+    usage: { input: number; cachedInput: number; output: number; reasoning: number };
+  }> {
+    this.guard.authorize("claude", input.runId, input.authorization, input.advisorContext);
+    const scrubbedEnv = env;
+    const isolated = advisor || input.executionProfile === "planning";
     const stream = query({
-      prompt: input.prompt,
+      prompt,
       options: {
         cwd: this.options.cwd,
-        env: scrubbed.env,
+        env: scrubbedEnv,
         pathToClaudeCodeExecutable: bundledClaudeCliPath(),
         ...(input.abortController
           ? { abortController: input.abortController }
           : {}),
         maxTurns: advisor ? 1 : input.maxTurns ?? 8,
-        ...(input.sessionId ? { resume: input.sessionId } : {}),
+        ...(resumeSessionId ? { resume: resumeSessionId } : {}),
         ...(input.outputSchema
           ? { outputFormat: { type: "json_schema", schema: input.outputSchema } }
           : {}),
         ...(input.model ? { model: input.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
         ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
-        permissionMode: advisor || input.readOnly ? "dontAsk" : "default",
-        ...(advisor ? { tools: [], mcpServers: {} } : {}),
-        disallowedTools: advisor
+        permissionMode: isolated || input.readOnly ? "dontAsk" : "default",
+        ...(isolated ? { tools: [], mcpServers: {} } : {}),
+        disallowedTools: isolated
           ? [
               "Agent",
               "Task",
@@ -353,7 +433,7 @@ export class ClaudeAgentAdapter {
         includePartialMessages: false,
         // The adviser has no canUseTool path at all: with zero tools there is
         // nothing to approve, and no permission decision can be requested.
-        ...(advisor
+        ...(isolated
           ? {}
           : {
               canUseTool: async (
@@ -379,12 +459,10 @@ export class ClaudeAgentAdapter {
     });
     for await (const message of stream) {
       const candidate = message as any;
-      if (candidate.session_id) sessionId = candidate.session_id;
+      if (candidate.session_id) sink.setSession(String(candidate.session_id));
       if (candidate.type === "result" && candidate.subtype === "success") {
-        text = String(candidate.result ?? "");
-        structuredOutput = candidate.structured_output;
-        usage = {
-          input: Number(candidate.usage?.input_tokens ?? 0),
+        sink.setOutcome(String(candidate.result ?? ""), candidate.structured_output, {
+          input: Number(candidate.usage?.input_tokens ?? 0) + Number(candidate.usage?.cache_creation_input_tokens ?? 0),
           cachedInput: Number(
             candidate.usage?.cache_read_input_tokens ??
               candidate.usage?.cached_input_tokens ??
@@ -392,7 +470,7 @@ export class ClaudeAgentAdapter {
           ),
           output: Number(candidate.usage?.output_tokens ?? 0),
           reasoning: Number(candidate.usage?.reasoning_output_tokens ?? 0),
-        };
+        });
       }
       if (candidate.type === "result" && candidate.is_error) {
         throw new Error(`CLAUDE_BURST_FAILED:${(candidate.errors ?? []).join(";")}`);
@@ -423,6 +501,7 @@ export class ClaudeAgentAdapter {
         );
       }
     }
-    return { sessionId, messages, text, structuredOutput, usage };
+    const outcome = sink.getOutcome();
+    return { ...outcome, messages };
   }
 }

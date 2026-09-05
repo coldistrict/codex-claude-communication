@@ -156,6 +156,9 @@ export interface BillingStatus {
 }
 
 export interface GoalPacket {
+  /** Absent on historical implementation runs. */
+  workflow?: "planning" | "execution";
+  projectContext?: string | null;
   id: string;
   runId: string;
   goal: string;
@@ -173,8 +176,18 @@ export interface GoalPacket {
   }>;
   authority: {
     writableRoots: string[];
+    /**
+     * Extra roots the agents may read (never write) without a card, beyond
+     * the workspace itself. Absent on goals recorded before 2026-07-28.
+     */
+    readableRoots?: string[];
     network: "off" | "ask";
-    permissionPreset: "default" | "read_only";
+    /**
+     * auto: workspace-contained writes and commands run without a card
+     * (hazardous classes still ask). default: ask before the first
+     * workspace mutation. read_only: mechanically deny all mutations.
+     */
+    permissionPreset: "auto" | "default" | "read_only";
   };
   stopConditions?: {
     maxDurationMinutes: number | null;
@@ -225,6 +238,7 @@ export interface OutcomeManifest {
 }
 
 export interface ActionCard {
+  questions?: Array<{ id: string; question: string; options?: string[] }>;
   id: string;
   kind:
     | "preflight"
@@ -248,7 +262,46 @@ export interface ActionCard {
   actions: string[];
 }
 
+/**
+ * One live-observability line about what a provider is doing right now:
+ * a tool invocation, a text fragment, or a lifecycle status. Entries are
+ * transient (in-memory ring per run, streamed over SSE) — the durable
+ * record stays the hash-chained event log; losing the feed on restart is
+ * acceptable and expected.
+ */
+export interface AgentActivityEntry {
+  seq: number;
+  ts: string;
+  runId: string;
+  role: ProviderRole;
+  kind: "tool" | "text" | "status";
+  /** Redacted, length-capped human-readable line. */
+  summary: string;
+}
+
+/**
+ * Transient, per-run statement of which model a worker is actually running
+ * on and at what reasoning effort, observed from provider responses (Codex
+ * thread responses and reroute notifications; Claude session init). Same
+ * lifecycle as the activity feed: in-memory, SSE-streamed, lost on restart.
+ */
+export interface AgentModelIdentity {
+  runId: string;
+  role: ProviderRole;
+  model: string | null;
+  /** null when the provider did not report an effort (CLI default applies). */
+  effort: string | null;
+  observedAt: string;
+}
+
 export type KernelEventType =
+  | "planning_context"
+  | "planning_step"
+  | "document_posted"
+  | "document_reviewed"
+  | "planning_finished"
+  | "clarification_answered"
+  | "planning_extension"
   | "goal_set"
   | "preflight_passed"
   | "preflight_blocked"
@@ -332,6 +385,7 @@ export interface BudgetProjection {
 }
 
 export interface RunProjection {
+  planning?: PlanningProjection;
   runId: string;
   seq: number;
   state: RunState;
@@ -341,7 +395,17 @@ export interface RunProjection {
   barrierReleased: boolean;
   packets: PublicPacket[];
   candidate: { manifest: OutcomeManifest; digest: string; verificationDigest: string } | null;
-  signoffs: Partial<Record<ProviderRole, { manifestDigest: string; verificationDigest: string }>>;
+  signoffs: Partial<
+    Record<
+      ProviderRole,
+      {
+        manifestDigest: string;
+        verificationDigest: string;
+        /** The model's own signing rationale; absent on pre-2026-07-29 events. */
+        rationale?: string;
+      }
+    >
+  >;
   materialChallenges: Record<string, { status: "open" | "resolved"; positions: string[] }>;
   actions: ActionCard[];
   budgets: BudgetProjection;
@@ -429,4 +493,60 @@ export interface ReadyWorkItem {
   /** Explicit completion for no-replay recovery; absent on legacy rows. */
   completedAt?: string;
   outcome?: string;
+}
+
+export interface PlanningEvidence {
+  id: string;
+  source: string;
+  content: string;
+  sha256: string;
+  status: "supplied" | "observed";
+}
+export interface PlanningObjection {
+  id: string;
+  severity: "material" | "minor";
+  issue: string;
+  correction: string;
+  evidenceIds: string[];
+}
+export interface PlanningReview {
+  contextVersion?: number;
+  reviewer: ProviderRole;
+  revision: string;
+  verdict: "approved" | "revision_requested" | "disagreement" | "needs_input";
+  rationale: string;
+  objections: PlanningObjection[];
+  conditions: Array<{ condition: string; status: "met" | "unmet" | "unknown"; reason: string }>;
+}
+export interface PlanningDocument {
+  title: string;
+  body: string;
+  assumptions: string[];
+  nextSteps: string[];
+  claims: Array<{ text: string; evidenceIds: string[]; status: "supported" | "unsupported" | "inference" }>;
+  conditions: Array<{ condition: string; status: "met" | "unmet" | "unknown"; reason: string }>;
+  dispositions: Array<{ objectionId: string; disposition: "addressed" | "retained" | "withdrawn"; reason: string }>;
+  changes: string[];
+  unresolved: string[];
+}
+export interface DocumentRevision extends PlanningDocument {
+  schemaVersion: 1;
+  number: number;
+  revision: string;
+  author: ProviderRole;
+  createdAt: string;
+}
+export interface PlanningProjection {
+  context: PlanningEvidence[];
+  contextNotes: string[];
+  steps: Array<{ key: string; role: ProviderRole; phase: string; output: unknown; durationMs: number; usage: { input: number; cachedInput: number; output: number; reasoning: number }; usageComplete: boolean }>;
+  documents: DocumentRevision[];
+  reviews: PlanningReview[];
+  answers: Array<{ cardId: string; question: string; answer: string }>;
+  extensionFocus: string | null;
+  status: "working" | "ready" | "partial";
+  agreement: "pending" | "agreed" | "disagreed";
+  fulfillment: "pending" | "met" | "unmet";
+  evidenceStatus: "not_assessed" | "supplied_context" | "unsupported_claims";
+  issues: string[];
 }

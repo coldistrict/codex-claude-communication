@@ -205,6 +205,19 @@ export class LeaseManager {
     return [...this.leases.values()].map((lease) => structuredClone(lease));
   }
 
+  /**
+   * User-authorized reconciliation of an uncertain lease: the retry decision
+   * (a durable human_override) is the resolution, so the lease is removed
+   * without an owner check — the owning incarnation may no longer exist.
+   * A lease that is absent or not uncertain is left untouched.
+   */
+  reconcileRelease(id: string): boolean {
+    const lease = this.leases.get(id);
+    if (!lease || lease.status !== "uncertain") return false;
+    this.leases.delete(id);
+    return true;
+  }
+
   private requireOwner(id: string, owner: LeaseOwner): Lease {
     const lease = this.leases.get(id);
     if (!lease || !sameOwner(lease.owner, owner)) {

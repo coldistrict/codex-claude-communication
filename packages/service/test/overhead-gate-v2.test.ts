@@ -19,7 +19,7 @@ function fixture() {
     publish: () => undefined,
   });
   const runId = coordinator.createRun(
-    {
+    { workflow: "execution",
       goal: "Exercise the stable overhead breach notice.",
       workspace,
       mode: "real",

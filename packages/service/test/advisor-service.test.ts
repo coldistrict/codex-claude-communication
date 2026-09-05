@@ -204,7 +204,7 @@ function fixture(input?: {
   });
   store.appendListener = (event: StoredEvent) => service.noteEvent(event);
   const runId = coordinator.createRun(
-    {
+    { workflow: "execution",
       goal: "Exercise the advisory supervisor deterministically.",
       workspace,
       mode: "real",
@@ -1091,8 +1091,8 @@ describe("adviser note files are contained, headed, and tamper-evident", () => {
   });
 });
 
-describe("per-wake catalog verification fails closed on drift", () => {
-  it("fails the wake without a model start when the pinned row or effort disappears", async () => {
+describe("per-wake default-row resolution", () => {
+  it("fails the wake without a model start when no default row exists or the effort is not advertised", async () => {
     const missingRow = fixture({
       advisor: { enabled: true, provider: "claude", effort: "high" },
       script: {
@@ -1116,7 +1116,7 @@ describe("per-wake catalog verification fails closed on drift", () => {
     ).toBe("model_profile_unavailable");
     expect(
       (rows.find((row) => row.kind === "failure")!.payload as any).detail,
-    ).toContain("ADVISOR_MODEL_DRIFT");
+    ).toContain("ADVISOR_DEFAULT_ROW_UNAVAILABLE");
     missingRow.store.close();
 
     const missingEffort = fixture({
@@ -1138,8 +1138,33 @@ describe("per-wake catalog verification fails closed on drift", () => {
     rows = missingEffort.service.sidecar.rows(missingEffort.runId);
     expect(
       (rows.find((row) => row.kind === "failure")!.payload as any).detail,
-    ).toContain("ADVISOR_EFFORT_DRIFT");
+    ).toContain("ADVISOR_EFFORT_UNAVAILABLE");
     missingEffort.store.close();
+  });
+
+  it("follows the provider default when it resolves to a new model", async () => {
+    const { store, runId, service, coordinator, ports } = fixture({
+      advisor: { enabled: true, provider: "claude", effort: "high" },
+      script: {
+        catalog: [
+          {
+            value: "default",
+            resolvedModel: "claude-opus-6",
+            supportedEffortLevels: ["high", "medium"],
+          },
+        ],
+      },
+    });
+    coordinator.requestAdvisor(runId);
+    await flush();
+    const port = ports.get("claude")!;
+    expect(port.counters.started).toBe(1);
+    expect(port.bursts[0]!.model).toBe("claude-opus-6");
+    const observation = service.sidecar
+      .rows(runId)
+      .find((row) => row.kind === "observation");
+    expect((observation!.payload as any).model).toBe("claude-opus-6");
+    store.close();
   });
 
   it("keeps adviser tool requests at zero across every processed wake", async () => {

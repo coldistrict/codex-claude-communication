@@ -55,7 +55,34 @@ describe("V-6 approval and needs-input bridge", () => {
     }
   });
 
-  it("allows scoped reads, defers without losing the request, and rejects task grants outside workspace", () => {
+  it("never offers task scope outside the workspace and narrows such decisions to once", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "collab-approvals-"));
+    const outside = join(tmpdir(), "collab-approvals-outside", "product");
+    const bridge = new ApprovalBridge(workspace);
+    const request = {
+      id: "outside-write",
+      role: "claude" as const,
+      tool: "Bash",
+      command: "cd /outside/product && cat README.md",
+      paths: [outside],
+      reason: "Inspect the sibling project",
+      sideEffect: "Runs a command outside the workspace",
+      reversibility: "Review the exact operation",
+      classification: "workspace_write" as const,
+    };
+    const evaluated = bridge.evaluate(request);
+    expect(evaluated.allowed).toBe(false);
+    if (evaluated.allowed) throw new Error("fixture");
+    expect(evaluated.card.actions).not.toContain("Allow for task");
+    // Even a decision that arrives with task scope anyway (an API caller can
+    // send any label) must apply as a one-time allowance without throwing.
+    const applied = bridge.decide(request.id, { behavior: "allow", scope: "task" });
+    expect(applied.decision).toEqual({ behavior: "allow", scope: "once" });
+    const repeat = bridge.evaluate({ ...request, id: "outside-write-2" });
+    expect(repeat.allowed).toBe(false);
+  });
+
+  it("allows scoped reads and defers without losing the request", () => {
     const workspace = mkdtempSync(join(tmpdir(), "collab-approvals-"));
     const inside = join(workspace, "src");
     mkdirSync(inside);
