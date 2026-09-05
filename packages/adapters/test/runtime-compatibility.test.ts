@@ -7,7 +7,7 @@ import { ClaudeAgentAdapter, parseClaudeBillingUsage } from '../src/claude-adapt
 
 describe('measured runtime compatibility and billing diagnostics',()=>{
   it('checks the generated Codex contract and detects removed request fields',()=>{
-    const schema=JSON.parse(readFileSync(new URL('../../../artifacts/planning-2026-09-04/codex-schema/codex_app_server_protocol.v2.schemas.json',import.meta.url),'utf8'));
+    const schema=JSON.parse(readFileSync(new URL('./fixtures/codex-planning-contract.json',import.meta.url),'utf8'));
     expect(checkCodexContract(schema)).toEqual([]);delete schema.definitions.TurnStartParams.properties.outputSchema;expect(checkCodexContract(schema)).toContain('turn/start structured output and input');
   });
   it('does not report a missing runtime as a successful pin check',async()=>{const r=await observeRuntime('codex','/missing/runtime');expect(r.versionMatches).toBe(false);expect(r.schemaMatches).toBe(false);expect(r.trace.join()).toContain('runtime probe');});

@@ -41,6 +41,12 @@ Billing follows the recorded project policy: subscription allowance first, then 
 
 ## Verification and evaluation
 
+After installing dependencies, install the pinned Playwright browser once for the browser tests (the browser cache is not stored in Git):
+
+```sh
+PLAYWRIGHT_BROWSERS_PATH=.playwright npx playwright install chromium
+```
+
 ```sh
 npm run verify:pins
 npm test

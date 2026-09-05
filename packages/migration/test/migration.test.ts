@@ -1,15 +1,17 @@
 import {
   copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { canonicalJson, digest, EventStore, replay } from "@collab/kernel";
 import {
   exportRun,
@@ -23,13 +25,33 @@ import {
   restoreDatabaseBackup,
 } from "../src/index.ts";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repository = resolve(here, "../../../..");
-const tasksRoot = join(repository, "tasks");
-const approvedTask = join(tasksRoot, "2026-07-25-collaboration-product-blueprint");
+// Representative legacy formats belong to the test, not a developer's
+// sibling task history. Real saved-history verification is recorded separately.
+const tasksRoot = mkdtempSync(join(tmpdir(), "collab-legacy-fixtures-"));
+const fixtures: Array<{ name: string; files: Record<string, string>; goal: string }> = [
+  { name: "completed-with-artifacts", files: { "TASK.md": "Objective: Review a proposal", "state.json": '{"status":"completed"}', "final-plan.md": "Keep the reviewed plan." }, goal: "Review a proposal" },
+  { name: "active", files: { "TASK.md": "Objective: Active work", "state.json": '{"status":"running"}' }, goal: "Active work" },
+  { name: "missing-state", files: { "TASK.md": "Objective: Missing state", "notes.md": "Shared note" }, goal: "Missing state" },
+  { name: "invalid-state", files: { "TASK.md": "Objective: Invalid state", "state.json": "{incomplete" }, goal: "Invalid state" },
+  { name: "consensus", files: { "TASK.md": "Objective: Agreed result", "state.json": '{"status":"consensus"}', "codex-notes.md": "Codex note", "claude-notes.md": "Claude note" }, goal: "Agreed result" },
+  { name: "deadlock", files: { "TASK.md": "Objective: Preserve dissent", "state.json": '{"status":"deadlock"}', "transcript.md": "Remaining tradeoff" }, goal: "Preserve dissent" },
+  { name: "cancelled", files: { "TASK.md": "Objective: Cancelled work", "state.json": '{"status":"cancelled"}' }, goal: "Cancelled work" },
+  { name: "notes-only", files: { "notes.md": "No task document" }, goal: "notes-only" },
+  { name: "lowercase-objective", files: { "TASK.md": "objective: Lowercase format" }, goal: "Lowercase format" },
+  { name: "heading-fallback", files: { "TASK.md": "# Historical goal\nDescription" }, goal: "# Historical goal" },
+];
+for (const fixture of fixtures) {
+  const directory = join(tasksRoot, fixture.name);
+  mkdirSync(directory);
+  for (const [name, content] of Object.entries(fixture.files)) writeFileSync(join(directory, name), content);
+}
+const approvedTask = join(tasksRoot, "completed-with-artifacts");
+mkdirSync(join(approvedTask, "artifacts"));
+for (let index = 0; index < 32; index++) writeFileSync(join(approvedTask, "artifacts", `record-${index}.txt`), `Synthetic record ${index}\n`);
+afterAll(() => rmSync(tasksRoot, { recursive: true, force: true }));
 
 describe("V-10 legacy read-only, copy import, export, and backup", () => {
-  it("renders every historical task shape without changing one source byte", () => {
+  it("renders representative historical task shapes without changing one source byte", () => {
     const before = inventoryTree(tasksRoot);
     const taskDirectories = new Set(before.map((file) => file.path.split("/")[0]!));
     expect(taskDirectories.size).toBeGreaterThanOrEqual(10);
@@ -38,7 +60,13 @@ describe("V-10 legacy read-only, copy import, export, and backup", () => {
       expect(task.readOnly).toBe(true);
       expect(task.name).toBe(name);
       expect(task.files.length).toBeGreaterThan(0);
+      expect(task.goal).toBe(fixtures.find((fixture) => fixture.name === name)!.goal);
     }
+    expect(readLegacyTask(join(tasksRoot, "invalid-state")).state).toBeNull();
+    expect(readLegacyTask(join(tasksRoot, "missing-state")).state).toBeNull();
+    expect(readLegacyTask(join(tasksRoot, "consensus")).notes.map((note) => note.content)).toEqual(["Codex note", "Claude note"]);
+    expect(readLegacyTask(approvedTask).finalPlan).toBe("Keep the reviewed plan.");
+    expect(readLegacyTask(join(tasksRoot, "deadlock")).transcript).toBe("Remaining tradeoff");
     expect(inventoryTree(tasksRoot)).toEqual(before);
   });
 
@@ -51,11 +79,10 @@ describe("V-10 legacy read-only, copy import, export, and backup", () => {
     expect(imported.sourceHash).toBe(dryRun.sourceHash);
     const importedRoot = join(destination, "legacy", imported.sourceHash);
     expect(inventoryTree(importedRoot)).toEqual(inventoryTree(approvedTask));
-    const activeTask = join(tasksRoot, "2026-07-04-intellibot-ui-ux");
+    const activeTask = join(tasksRoot, "active");
     const active = readLegacyTask(activeTask);
-    if (active.state?.status && !["consensus", "deadlock", "completed", "cancelled"].includes(String(active.state.status))) {
-      expect(() => planLegacyImport(activeTask, destination)).toThrow(/ACTIVE_LEGACY_REFUSED/);
-    }
+    expect(active.state?.status).toBe("running");
+    expect(() => planLegacyImport(activeTask, destination)).toThrow(/ACTIVE_LEGACY_REFUSED/);
   });
 
   it("exports canonical JSONL that replays identically and verifies a byte backup", () => {
