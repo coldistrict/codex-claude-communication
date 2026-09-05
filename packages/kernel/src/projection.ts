@@ -8,6 +8,7 @@ import {
   type RunProjection,
   type StoredEvent,
 } from "@collab/contracts";
+import { initialPlanning, assessDocument } from './documents.ts';
 
 export const DEFAULT_CHALLENGE_BUDGET = 4;
 export const DEFAULT_PROVIDER_BUDGET = 24;
@@ -73,6 +74,7 @@ export function applyEvent(current: RunProjection, event: StoredEvent): RunProje
   switch (event.type) {
     case "goal_set": {
       next.goal = payload.goal as GoalPacket;
+      if (next.goal.workflow === 'planning') next.planning = initialPlanning();
       const budget = next.goal.usefulWorkBudget;
       for (const role of PROVIDER_ROLES) next.budgets.provider[role].limit = budget.perProvider;
       next.state = "starting";
@@ -200,12 +202,50 @@ export function applyEvent(current: RunProjection, event: StoredEvent): RunProje
       break;
     }
     case "candidate_posted":
+      next.signoffs = {};
       next.candidate = {
         manifest: payload.manifest,
         digest: payload.digest,
         verificationDigest: payload.verificationDigest,
       };
       next.state = "verifying";
+      break;
+    case 'planning_context':
+      next.planning!.context = payload.context;
+      next.planning!.contextNotes = payload.notes;
+      break;
+    case 'planning_step':
+      next.planning!.steps.push(payload.step);
+      next.workers[payload.step.role as ProviderRole].state = 'waiting_handoff';
+      break;
+    case 'document_posted':
+      next.planning!.documents.push(payload.document);
+      next.planning!.status = 'working';
+      next.planning!.agreement = 'pending';
+      next.planning!.fulfillment = 'pending';
+      next.signoffs = {};
+      next.state = 'verifying';
+      break;
+    case 'document_reviewed':
+      next.planning!.reviews.push(payload.review);
+      Object.assign(next.planning!, assessDocument(next.planning!, next.goal!.completionEvidence));
+      break;
+    case 'clarification_answered':
+      next.planning!.answers.push({ cardId: payload.cardId, question: payload.question, answer: payload.answer });
+      next.planning!.status = 'working'; next.planning!.agreement = 'pending'; next.planning!.fulfillment = 'pending';
+      next.openings = { codex: null, claude: null }; next.barrierReleased = false;
+      next.actions = next.actions.filter(a => a.id !== payload.cardId);
+      next.state = 'negotiating';
+      break;
+    case 'planning_extension':
+      next.planning!.extensionFocus = payload.focus;
+      next.actions = next.actions.filter(a => a.id !== payload.cardId);
+      next.state = 'negotiating';
+      break;
+    case 'planning_finished':
+      Object.assign(next.planning!, assessDocument(next.planning!, next.goal!.completionEvidence));
+      next.state = next.planning!.status === 'ready' ? 'completed_consensus' : 'completed_disagreement';
+      next.completedAt = event.ts;
       break;
     case "signoff": {
       const role = event.actor as ProviderRole;

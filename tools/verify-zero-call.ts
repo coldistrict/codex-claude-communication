@@ -1,3 +1,4 @@
+import { modelCallStructure } from "./model-call-structure.ts";
 import { readFile, readdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,13 +68,13 @@ function assertOnlyIn(
 // 1. The one guarded Codex turn/start site lives only in codex-client.ts.
 const turnStarts = assertOnlyIn(
   "codex_turn_start",
-  perFile(/request\("turn\/start"/g),
+  new Map([...sources].map(([file, source]) => [file, modelCallStructure(source).turnStarts]).filter(([, count]) => count !== 0) as [string, number][]),
   { "codex-client.ts": 1 },
 );
 // Fragmented or computed method names cannot rebuild "turn/start" elsewhere:
-// the exact substring may appear exactly once in production source, and no
+// the exact string token may appear exactly once in production source, and no
 // prefix fragment or computed indexing of the request method may appear.
-assertOnlyIn("codex_turn_start_substring", perFile(/turn\/start/g), {
+assertOnlyIn("codex_turn_start_exact_token", new Map([...sources].map(([file, source]) => [file, modelCallStructure(source).turnLiterals]).filter(([, count]) => count !== 0) as [string, number][]), {
   "codex-client.ts": 1,
 });
 for (const [file, text] of sources) {
@@ -95,8 +96,8 @@ const sdkQueries = assertOnlyIn("claude_query", perFile(/\bquery\(\{/g), {
 // prompt and one metadata-only prompt.
 const adapterSource =
   [...sources].find(([file]) => basename(file) === "claude-adapter.ts")?.[1] ?? "";
-const sdkModelQueries = countIn(/prompt:\s*input\.prompt/g, adapterSource);
-const sdkMetadataQueries = countIn(/prompt:\s*noModelMessages\(\)/g, adapterSource);
+const sdkModelQueries = modelCallStructure(adapterSource).modelQueries;
+const sdkMetadataQueries = modelCallStructure(adapterSource).metadataQueries;
 // The SDK may be imported only by claude-adapter.ts, without aliasing the
 // query symbol, and never through require()/dynamic import.
 for (const [file, text] of sources) {

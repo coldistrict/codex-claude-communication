@@ -15,6 +15,8 @@ import {
   type PreflightResult,
 } from "./policy.ts";
 
+import { observeRuntime } from './runtime.ts';
+
 export interface JsonRpcMessage {
   id?: number;
   method?: string;
@@ -168,6 +170,10 @@ export class CodexAppServerClient {
       detached: process.platform !== "win32",
     });
     this.process = child;
+    child.on('error', error => {
+      for (const waiter of this.pending.values()) { clearTimeout(waiter.timer); waiter.reject(new Error(`CODEX_SPAWN_FAILED:${error.message}`)); }
+      this.pending.clear(); this.process = null;
+    });
     child.stderr.on("data", (chunk) => {
       this.stderrTail = `${this.stderrTail}${String(chunk)}`.slice(-4_000);
     });
@@ -221,6 +227,8 @@ export class CodexAppServerClient {
   }
 
   async metadataPreflight(input: Omit<CodexPreflightInput, "account" | "rateLimits">): Promise<PreflightResult> {
+    const observed = await observeRuntime('codex', this.options.binary);
+    input = { ...input, versionMatches: observed.versionMatches, schemaMatches: observed.schemaMatches };
     await this.connect();
     const [accountResult, limitsResult, initialConfigResult] = await Promise.all([
       this.request("account/read", { refreshToken: false }),
@@ -255,7 +263,10 @@ export class CodexAppServerClient {
         : null,
       rateLimits: limitsResult?.rateLimits
         ? {
-            structurallyTrusted: true,
+            structurallyTrusted: typeof limitsResult.rateLimits === 'object' &&
+              typeof limitsResult.rateLimits.primary?.usedPercent === 'number' &&
+              Number.isFinite(limitsResult.rateLimits.primary.usedPercent) &&
+              (limitsResult.rateLimits.credits == null || (typeof limitsResult.rateLimits.credits.hasCredits === 'boolean' && typeof limitsResult.rateLimits.credits.unlimited === 'boolean')),
             planType: limitsResult.rateLimits.planType ?? null,
             primary: limitsResult.rateLimits.primary
               ? {
@@ -294,6 +305,8 @@ export class CodexAppServerClient {
           : currentCreditBalance !== this.previousCreditBalance;
       this.previousCreditBalance = currentCreditBalance;
     }
+    result.trace.push(...observed.trace);
+    result.billing.proof.push(...observed.trace);
     this.billing = result.ok ? result.billing : null;
     return result;
   }
@@ -405,7 +418,7 @@ export class CodexAppServerClient {
      * model and effort, provider-side output schema, and a one-use bound
      * authorization. The worker profile never sets these.
      */
-    executionProfile?: "worker" | "advisor";
+    executionProfile?: "worker" | "advisor" | "planning";
     model?: string;
     effort?: string;
     outputSchema?: Record<string, unknown>;
@@ -418,6 +431,7 @@ export class CodexAppServerClient {
     usage: { input: number; cachedInput: number; output: number; reasoning: number };
   }> {
     const advisor = input.executionProfile === "advisor";
+    const isolated = advisor || input.executionProfile === "planning";
     if (
       advisor &&
       (!input.model ||
@@ -432,14 +446,14 @@ export class CodexAppServerClient {
     const threadResult = await this.startOrResumeThread({
       ...(input.threadId ? { threadId: input.threadId } : {}),
       cwd: this.options.cwd,
-      approvalPolicy: advisor ? "never" : "on-request",
-      ...(advisor
+      approvalPolicy: isolated ? "never" : "on-request",
+      ...(isolated
         ? { sandbox: "read-only" }
         : input.sandbox
           ? { sandbox: input.sandbox }
           : {}),
       ...(input.model ? { model: input.model } : {}),
-      ...(advisor
+      ...(isolated
         ? {
             developerInstructions: input.systemPrompt,
             config: {
@@ -499,7 +513,7 @@ export class CodexAppServerClient {
       completed = await this.waitForTurn(
         turnId,
         input.timeoutMs ?? 10 * 60_000,
-        !advisor,
+        !isolated,
       );
     } finally {
       this.activeTurn = null;
@@ -662,7 +676,7 @@ export class CodexAppServerClient {
     if (method === "item/permissions/requestApproval") {
       return { permissions: {}, scope: "turn", strictAutoReview: true };
     }
-    if (method === "item/tool/requestUserInput") return { answers: {} };
+    if (method === "item/tool/requestUserInput") throw new Error("CODEX_USER_INPUT_HANDLER_REQUIRED");
     throw new Error(`CODEX_SERVER_REQUEST_UNSUPPORTED:${method}`);
   }
 

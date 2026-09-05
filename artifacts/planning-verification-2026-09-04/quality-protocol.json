@@ -1,0 +1,67 @@
+{
+  "status": "prepared; live comparison not run",
+  "cases": [
+    {
+      "id": "rough-goal",
+      "brief": "I want to learn spreadsheets from scratch in four weeks, with two hours per week. Create a practical plan with small practice tasks and a progress check.",
+      "required": [
+        "Fit the plan into eight total hours."
+      ],
+      "correction": "No seeded error; judge practicality and unnecessary overhead."
+    },
+    {
+      "id": "seeded-mistake",
+      "brief": "Review this proposal: three workshops with eight participants each need thirty-two seats. We have twenty-four seats available. Decide whether we need another room and explain the calculation.",
+      "required": [
+        "Correct the participant count using the supplied numbers."
+      ],
+      "correction": "3 × 8 = 24; the stated count of 32 is wrong."
+    },
+    {
+      "id": "ambiguous",
+      "brief": "Help me plan the launch. I have not decided what is launching, for whom, or when. Ask for the material information needed before proposing a substantive launch plan.",
+      "required": [
+        "Identify the missing launch subject and audience."
+      ],
+      "correction": "A material clarification is useful; invented launch details are unsupported."
+    },
+    {
+      "id": "tradeoffs",
+      "brief": "Choose between a two-week modest prototype that teaches us quickly and a six-week polished prototype that offers a more representative user experience. Both are affordable; our priority between speed of learning and realism remains undecided. Explain the tradeoff without pretending there is one uniquely correct choice.",
+      "required": [
+        "Keep the preference-dependent tradeoff visible."
+      ],
+      "correction": "A conditional recommendation is legitimate; agreement is not proof of quality."
+    }
+  ],
+  "conditions": [
+    "single",
+    "self-review",
+    "two-provider"
+  ],
+  "outputWords": 550,
+  "workBudgets": {
+    "single": {
+      "maxCalls": 1
+    },
+    "selfReview": {
+      "maxCalls": 3
+    },
+    "twoProvider": {
+      "maxCalls": 10,
+      "maxRevisionCycles": 1
+    }
+  },
+  "fairness": "Same brief, required conditions, supplied evidence, no tools, and output-body length cap. Work budgets intentionally differ and must be reported alongside quality. Balance baseline provider and synthesis role across paired batches.",
+  "metrics": [
+    "useful corrections (model-reported; human check)",
+    "unsupported claims",
+    "human usefulness",
+    "human preference",
+    "body words",
+    "latency",
+    "actual provider usage and missing coverage"
+  ],
+  "blinding": "Review only answer-*.md plus human-ratings.csv. Keep condition-key.json hidden until ratings are entered.",
+  "conclusion": "No superiority or user preference has been established."
+}

@@ -39,6 +39,7 @@ const CSP =
 
 export interface CollabServerOptions {
   stateFile: string;
+  planning?: import("./planning-runner.ts").PlanningOptions;
   uiDirectory?: string;
   /**
    * Enables the read-only legacy browser for immediate child task folders.
@@ -280,6 +281,7 @@ export function createCollabServer(options: CollabServerOptions) {
   });
   store.appendListener = (event) => advisorService.noteEvent(event);
   const coordinator = new Coordinator(store, {
+    ...(options.planning ? { planning: options.planning } : {}),
     codexBinary,
     ...(options.environment ? { environment: options.environment } : {}),
     resourceState: () => resources.current(),
@@ -613,6 +615,7 @@ export function createCollabServer(options: CollabServerOptions) {
     async close(): Promise<void> {
       clearInterval(resourceInterval);
       clearInterval(memoryPressureInterval);
+      await coordinator.shutdown();
       await advisorService.shutdown();
       for (const subscriber of subscribers) subscriber.end();
       await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -14,6 +14,7 @@ import {
 import { canonicalJson, digest, newId, sha256 } from "./canonical.ts";
 import { KernelError } from "./errors.ts";
 import { replay } from "./projection.ts";
+import { validateDocument, validateReview } from './documents.ts';
 import type { UsageRecord } from "./overhead.ts";
 
 const GENESIS_HASH = "0".repeat(64);
@@ -25,12 +26,14 @@ const GENESIS_HASH = "0".repeat(64);
 export const CURRENT_SCHEMA_VERSION = 2;
 
 const PROVIDER_ONLY = new Set([
+  'document_posted', 'document_reviewed', 'planning_step',
   "opening_committed",
   "packet_posted",
   "candidate_posted",
   "signoff",
 ]);
 const USER_ONLY = new Set([
+  'clarification_answered', 'planning_extension',
   "goal_set",
   "permission_decided",
   "human_override",
@@ -40,6 +43,7 @@ const USER_ONLY = new Set([
   "cancelled",
 ]);
 const COORDINATOR_ONLY = new Set([
+  'planning_context', 'planning_finished',
   "worker_started",
   "barrier_released",
   "work_claimed",
@@ -529,6 +533,7 @@ export class EventStore {
       const goal = (command.payload as { goal?: GoalPacket }).goal;
       if (!goal || goal.runId !== command.runId || goal.digest !== digest({
         goal: goal.goal,
+        ...(goal.workflow ? { workflow: goal.workflow, projectContext: goal.projectContext ?? null } : {}),
         workspace: goal.workspace,
         constraints: goal.constraints,
         ...(goal.attachments ? { attachments: goal.attachments } : {}),
@@ -608,6 +613,7 @@ export class EventStore {
       }
     }
     if (command.type === "completed") {
+      if (projection.goal?.workflow === 'planning') throw new Error('PLANNING_REQUIRES_DOCUMENT_COMPLETION');
       const payload = command.payload as any;
       if (!["completed_consensus", "completed_disagreement"].includes(payload.outcome)) {
         throw new KernelError("INVALID_STATE", "Completed outcome is invalid");
@@ -618,12 +624,44 @@ export class EventStore {
         if (
           !codex ||
           !claude ||
+          codex.manifestDigest !== projection.candidate?.digest ||
+          codex.verificationDigest !== projection.candidate?.verificationDigest ||
           codex.manifestDigest !== claude.manifestDigest ||
           codex.verificationDigest !== claude.verificationDigest
         ) {
           throw new KernelError("MANIFEST_MISMATCH", "Consensus requires matching provider signoffs");
         }
       }
+    }
+    if (['planning_context','planning_step','document_posted','document_reviewed','planning_finished','clarification_answered','planning_extension'].includes(command.type)) {
+      if (!projection.planning) throw new Error('PLANNING_RUN_REQUIRED');
+      const p = projection.planning;
+      const payload = command.payload as any;
+      if (command.type === 'planning_context' && p.context.length) throw new Error('PLANNING_CONTEXT_IMMUTABLE');
+      if (command.type === 'planning_step' && ['cross_review','synthesis','review','revision'].includes(payload.step?.phase) && !projection.barrierReleased) throw new Error('BARRIER_CLOSED');
+      if (command.type === 'document_posted') {
+        const doc = payload.document;
+        validateDocument(doc, projection.goal!.completionEvidence, p.context.map(e => e.id));
+        if (!projection.barrierReleased || doc.author !== command.actor || doc.number !== p.documents.length + 1 || doc.number > (p.extensionFocus ? 3 : 2)) throw new Error('DOCUMENT_SEQUENCE_INVALID');
+        if (p.documents.some(d => d.revision === doc.revision) || p.documents.at(-1)?.body === doc.body) throw new Error('DOCUMENT_REVISION_UNCHANGED');
+        const currentCrossObjections = p.steps.filter(s => s.phase === 'cross_review' && s.key.startsWith(`${p.answers.length}|`)).flatMap(s => (s.output as any).objections ?? []);
+        if (!p.documents.length && currentCrossObjections.some(o => o.severity === 'material' && !doc.dispositions.some((d: any) => d.objectionId === o.id))) throw new Error('DOCUMENT_DROPPED_CROSS_REVIEW');
+        const previous = p.documents.at(-1);
+        if (previous) {
+          const objections = p.reviews.filter(r => r.revision === previous.revision).flatMap(r => r.objections.filter(o => o.severity === 'material'));
+          if (objections.some(o => !doc.dispositions.some((d: any) => d.objectionId === o.id))) throw new Error('DOCUMENT_DROPPED_OBJECTION');
+        }
+      }
+      if (command.type === 'document_reviewed') {
+        const doc = p.documents.at(-1);
+        if (!doc || payload.review.reviewer !== command.actor || p.reviews.some(r => r.reviewer === command.actor && r.revision === doc.revision && (r.contextVersion ?? 0) === p.answers.length)) throw new Error('REVIEW_SEQUENCE_INVALID');
+        if ((payload.review.contextVersion ?? 0) !== p.answers.length) throw new Error('REVIEW_CONTEXT_MISMATCH');
+        validateReview(payload.review, doc, projection.goal!.completionEvidence, p.context.map(e => e.id));
+      }
+      if (command.type === 'planning_step' && (payload.step.role !== command.actor || p.steps.some(s => s.key === payload.step.key))) throw new Error('PLANNING_STEP_INVALID');
+      if (command.type === 'planning_finished' && !p.documents.at(-1)?.body.trim()) throw new Error('DOCUMENT_REQUIRED');
+      if (command.type === 'clarification_answered' && (!payload.answer?.trim() || !projection.actions.some(a => a.id === payload.cardId && a.kind === 'needs_input'))) throw new Error('CLARIFICATION_ANSWER_REQUIRED');
+      if (command.type === 'planning_extension' && (p.extensionFocus || !payload.focus?.trim() || !projection.actions.some(a => a.id === payload.cardId && a.kind === 'disagreement'))) throw new Error('PLANNING_EXTENSION_INVALID');
     }
     if (
       command.type === "budget_extended" ||

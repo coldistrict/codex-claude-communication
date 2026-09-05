@@ -1,0 +1,49 @@
+{
+  "question": "",
+  "result": {
+    "title": "Four-week beginner spreadsheet plan",
+    "body": "Your available time is **8 hours: 2 hours per week × 4 weeks**, not twelve [E1]. Plan on two 60-minute sessions each week, with all practice and checks included.\n\nUse one practice workbook throughout: a fictional spending log with columns for Date, Item, Category, Quantity, Unit Price, and Total. Use invented data.\n\n**Week 1 — Enter and organize data (120 minutes)**\n- Session 1: Spend 15 minutes opening a blank workbook and learning cells, rows, columns, and saving; 35 minutes entering 12 spending records; 10 minutes saving, closing, and reopening it.\n- Session 2: Spend 20 minutes editing values and adjusting column widths; 25 minutes formatting headers, dates, and currency; 15 minutes checking that you can find and correct three deliberately introduced mistakes.\n\n**Week 2 — Calculate with formulas (120 minutes)**\n- Session 1: Spend 15 minutes reviewing; 30 minutes calculating each row’s Total using Quantity × Unit Price and copying the formula down; 15 minutes inspecting the copied cell references.\n- Session 2: Spend 20 minutes adding SUM and AVERAGE calculations; 25 minutes changing inputs and observing the results; 15 minutes checking two row totals and the grand total by hand. Use small numbers to keep checking manageable.\n\n**Week 3 — Sort, filter, and present (120 minutes)**\n- Session 1: Spend 15 minutes reviewing; 25 minutes sorting the whole table by date and then total; 20 minutes filtering one category and restoring all rows. Check that each item stays paired with its original values.\n- Session 2: Spend 25 minutes building a small, manually calculated category summary; 20 minutes making one simple chart from it; 15 minutes checking that the summary matches the spending log and the chart has a clear title and labels.\n\n**Week 4 — Independent practice and repair (120 minutes)**\n- Session 1: Spend 45 minutes creating a fresh eight-record spending sheet without step-by-step notes: enter and format data, calculate row totals and a grand total, sort, and filter. Spend 15 minutes recording mistakes or steps needing help.\n- Session 2: Spend 30 minutes retrying the hardest steps; 20 minutes creating a category summary and chart; 10 minutes completing the final check below.\n\n**Progress check:** Can you reopen the saved workbook, correct an entry, explain one formula, verify totals, sort without separating records, filter and restore rows, and make a readable chart? Mark each “independent,” “with notes,” or “needs practice.” These are proposed learning criteria, not a guarantee of mastery.\n\n**Tradeoff:** Eight hours favors repeated practice with a small set of everyday skills. Advanced formulas, pivot tables, and automation are deferred. If you fall behind, replace chart time with formula and data-handling practice; keep the weekly limit.",
+    "assumptions": [
+      "You have access to a spreadsheet application with basic formulas, sorting, filtering, and charts; access has not been verified.",
+      "Two 60-minute sessions per week are workable.",
+      "The proposed pace is a starting point; prior computer experience and learning speed are unknown.",
+      "If access or setup takes longer than the first session allows, reduce practice scope rather than add study hours."
+    ],
+    "nextSteps": [
+      "At the first session, confirm application access and begin the fictional spending workbook.",
+      "Record progress at each weekly check and use Week 4 repair time for the weakest skills."
+    ],
+    "claims": [
+      {
+        "text": "Two hours per week for four weeks provides eight total hours, not twelve.",
+        "evidenceIds": ["E1"],
+        "status": "supported"
+      },
+      {
+        "text": "The proposed schedule allocates exactly 120 minutes per week for four weeks.",
+        "evidenceIds": [],
+        "status": "supported"
+      },
+      {
+        "text": "Repeated practice on one small workbook is a reasonable approach to the brief's beginner goal and time limit.",
+        "evidenceIds": ["E1"],
+        "status": "inference"
+      }
+    ],
+    "conditions": [
+      {
+        "condition": "Fit the plan into two hours per week for four weeks.",
+        "status": "met",
+        "reason": "Each week contains two 60-minute sessions, including practice and progress checks."
+      },
+      {
+        "condition": "Correct the total-hours calculation.",
+        "status": "met",
+        "reason": "The plan explicitly corrects twelve hours to eight: 2 × 4 = 8."
+      }
+    ],
+    "dispositions": [],
+    "changes": [],
+    "unresolved": []
+  }
+}

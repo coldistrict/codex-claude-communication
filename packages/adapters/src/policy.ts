@@ -130,7 +130,7 @@ export interface ClaudePreflightInput {
   subscriptionsRegistered: boolean;
 }
 
-const PAID_CODEX_PLANS = new Set(["plus", "pro", "team", "business", "enterprise", "edu"]);
+const PAID_CODEX_PLANS = new Set(["plus", "pro", "prolite", "team", "business", "enterprise", "edu"]);
 const PAID_CLAUDE_PLANS = new Set(["pro", "max", "team", "enterprise"]);
 
 function block(
@@ -195,14 +195,16 @@ export function evaluateCodexPreflight(input: CodexPreflightInput): PreflightRes
   if (
     !input.account ||
     input.account.type !== "chatgpt" ||
-    !input.account.requiresOpenaiAuth ||
-    !input.account.planType ||
-    !PAID_CODEX_PLANS.has(input.account.planType)
+    !input.account.requiresOpenaiAuth
   ) {
     const result = block("codex", trace, "codex.subscription_auth_unproven", "Complete official `codex login` with a paid ChatGPT plan, then retry preflight.", input.account?.planType ?? null);
     result.billing.authenticatedBy =
       input.account && input.account.type !== "chatgpt" ? "forbidden" : "none";
     return result;
+  }
+  if (!input.account.planType || !PAID_CODEX_PLANS.has(input.account.planType)) {
+    const result = block('codex', trace, 'codex.unknown_subscription_plan', 'The account is signed in, but this plan identifier has not been validated for subscription billing. Update the adapter compatibility policy using official plan/schema evidence; logging in again is not the default remedy.', input.account.planType ?? null);
+    result.billing.authenticatedBy = 'chatgpt'; return result;
   }
   trace.push("5:billing_route");
   const limits = input.rateLimits;
@@ -234,6 +236,7 @@ export function evaluateCodexPreflight(input: CodexPreflightInput): PreflightRes
       input.account.planType,
     );
   }
+  if (limits.planType && limits.planType !== input.account.planType) return block('codex', trace, 'codex.billing_metadata_changed', 'Account and rate-limit plans disagree. Refresh provider metadata before starting a turn.', input.account.planType);
   const secondary = windowComplete(limits.secondary) ? limits.secondary : null;
   const includedLimitReached =
     limits.primary.usedPercent >= 100 ||
@@ -335,8 +338,6 @@ export function evaluateClaudePreflight(input: ClaudePreflightInput): PreflightR
     !input.auth?.loggedIn ||
     input.auth.authMethod !== "claude.ai" ||
     input.auth.apiProvider !== "firstParty" ||
-    !input.auth.subscriptionType ||
-    !PAID_CLAUDE_PLANS.has(input.auth.subscriptionType.toLowerCase()) ||
     (input.auth.apiKeySource !== undefined &&
       input.auth.apiKeySource !== null &&
       !["none", "subscription"].includes(input.auth.apiKeySource))
@@ -356,7 +357,12 @@ export function evaluateClaudePreflight(input: ClaudePreflightInput): PreflightR
         : "none";
     return result;
   }
+  if (!input.auth.subscriptionType || !PAID_CLAUDE_PLANS.has(input.auth.subscriptionType.toLowerCase())) {
+    const result = block('claude', trace, 'claude.unknown_subscription_plan', 'The account is signed in but the plan identifier is absent or unknown. Refresh metadata or validate the changed provider schema.', input.auth.subscriptionType ?? null);
+    result.billing.authenticatedBy = 'claude.ai'; return result;
+  }
   trace.push("5:billing_route");
+  if (input.billing.includedUsageRemaining === false && input.billing.currentRoute !== 'existing_credits') return block('claude', trace, 'claude.subscription_limit_reached', 'Wait for the subscription allowance to reset. No paid fallback or reset credits will be used.', input.auth.subscriptionType);
   let route: "subscription_allowance" | "existing_credits";
   if (
     input.billing.currentRoute === "subscription_allowance" &&

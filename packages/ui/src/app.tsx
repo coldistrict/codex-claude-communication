@@ -1,3 +1,4 @@
+import { PlanningView } from "./planning-view.tsx";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type {
   ActionCard,
@@ -252,6 +253,7 @@ function ActionDrawer({
   // Cancelling from a reconciliation card ends the whole run; require a
   // second, explicitly labelled click so a cleanup-minded click cannot
   // kill a healthy collaboration.
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, Record<string,string>>>({});
   const [armedCancel, setArmedCancel] = useState<string | null>(null);
   return (
     <aside class="actions" aria-labelledby="actions-heading">
@@ -279,7 +281,11 @@ function ActionDrawer({
               <strong>Paths:</strong> {action.paths.join(", ")}
             </p>
           ) : null}
-          {action.requiresDetailsFor?.length ? (
+          {action.questions?.length ? action.questions.map(question => <label key={question.id}>{question.question}<textarea rows={2} value={questionAnswers[action.id]?.[question.id] ?? ''} onInput={event => {
+            const answers={...questionAnswers[action.id], [question.id]: event.currentTarget.value};
+            setQuestionAnswers(current=>({...current,[action.id]:answers}));
+            setDetails(current=>({...current,[action.id]: action.questions!.every(q=>answers[q.id]?.trim()) ? JSON.stringify(answers) : ''}));
+          }} />{question.options?.length ? <small>Options: {question.options.join(' / ')}</small> : null}</label>) : action.requiresDetailsFor?.length ? (
             <label class="action-details">
               {action.detailsLabel ?? "Details"}
               <textarea
@@ -337,6 +343,7 @@ function ActionDrawer({
 }
 
 export function App() {
+  const legacyDemo = new URLSearchParams(window.location.search).get("adapter") === "fake";
   const [csrf, setCsrf] = useState("");
   const [runs, setRuns] = useState<RunProjection[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -356,7 +363,7 @@ export function App() {
   // the common case needs no typing; the user can clear or replace it.
   function applyWorkspace(path: string): void {
     setWorkspace(path);
-    if (readableRootsTouched) return;
+    if (!legacyDemo || readableRootsTouched) return;
     const trimmed = path.replace(/\/+$/, "");
     const parent = trimmed.split("/").slice(0, -1).join("/");
     setReadableRootsText(parent.includes("/") && parent !== "" ? parent : "");
@@ -587,18 +594,20 @@ export function App() {
       },
       body: JSON.stringify({
         goal: form.get("goal"),
+        workflow: legacyDemo ? "execution" : "planning",
+        completionEvidence: String(form.get("completionEvidence") ?? "").split("\n").map(s => s.trim()).filter(Boolean),
         workspace: form.get("workspace"),
         ...(Object.keys(budgets).length ? { budgets } : {}),
         attachmentPaths,
         readableRoots,
-        permissionPreset: form.get("permissionPreset"),
+        permissionPreset: legacyDemo ? form.get("permissionPreset") : "read_only",
         stopConditions: {
           maxDurationMinutes:
             Number.isFinite(maxDurationMinutes) && maxDurationMinutes > 0
               ? maxDurationMinutes
               : null,
         },
-        resourceMode: form.get("resourceMode"),
+        resourceMode: legacyDemo ? form.get("resourceMode") : "serialized",
         ...(form.get("advisorEnabled") === "true"
           ? {
               advisor: {
@@ -791,7 +800,7 @@ export function App() {
             <p class="eyebrow">Local-first · Two-provider collaboration</p>
             <h1>Codex + Claude</h1>
             <p class="masthead-copy">
-              One workspace, two independent perspectives, one verified outcome.
+              One question or rough idea. Two independent perspectives. A practical answer or plan.
             </p>
           </div>
         </div>
@@ -838,18 +847,18 @@ export function App() {
         {creatorVisible ? (
           <>
             <p class="section-copy">
-              Choose a local workspace and describe the outcome. The safe defaults handle the rest.
+              Describe what you want to answer, decide, or plan. An existing proposal or project folder is optional.
             </p>
             <form onSubmit={createRun}>
           <div class="workspace-field">
-            <label for="workspace">Project or workspace</label>
+            <label for="workspace">Project or workspace (optional, read-only context)</label>
             <div class="workspace-picker-row">
               <input
                 id="workspace"
                 name="workspace"
                 type="text"
-                required
-                placeholder="/path/to/project"
+                required={legacyDemo}
+                placeholder="/path/to/project (optional)"
                 value={workspace}
                 onInput={(event) => applyWorkspace(event.currentTarget.value)}
                 aria-describedby={
@@ -868,7 +877,7 @@ export function App() {
               </button>
             </div>
             <small id="workspace-help">
-              Choose a folder from this computer, or enter its absolute path.
+              Optional: include a folder’s README and selected text files. The app manages document output.
             </small>
             {workspacePickerError ? (
               <small id="workspace-picker-error" class="field-error">
@@ -877,10 +886,10 @@ export function App() {
             ) : null}
           </div>
           <label>
-            What should Codex and Claude accomplish together?
+            {legacyDemo ? "What should Codex and Claude accomplish together?" : "What would you like help answering, deciding, or planning?"}
             <textarea name="goal" rows={4} required />
           </label>
-          <details class="advanced-settings">
+          {legacyDemo ? <details class="advanced-settings">
             <summary>Advanced settings</summary>
             <p class="settings-intro">
               Default: workspace-write asks on first mutation, network off,
@@ -1006,7 +1015,15 @@ export function App() {
               subscription billing routes are proven. The dashboard labels allowance versus
               existing-credit usage before the first turn.
             </p>
-          </details>
+          </details> : <details class="advanced-settings">
+            <summary>Context and limits</summary>
+            <p>Read-only sources, no provider tools, adviser off. Both providers see the same saved context. One revision cycle, with one optional final cycle for a specific issue.</p>
+            <label>Selected text files (one path within the optional project per line)<textarea name="attachmentPaths" rows={3} placeholder="requirements.md" /></label>
+            <small>Text snapshots are redacted, bounded, and stored with this run. Binary files and oversized files are omitted with an explanation.</small>
+            <label>Required conditions (optional, one per line)<textarea name="completionEvidence" rows={3} /></label>
+            <label>Provider calls per provider (default 9)<input name="perProvider" type="number" min={1} max={12} /></label>
+            <label>Stop after provider work (minutes, default 12)<input name="maxDurationMinutes" type="number" min={1} max={30} /></label>
+          </details>}
               <button class="primary" type="submit" disabled={!csrf}>
                 Start collaboration
               </button>
@@ -1132,7 +1149,7 @@ export function App() {
                 <h2 id="run-goal-heading">{selected.goal?.goal}</h2>
               </div>
               <div class="run-primary-actions">
-                <span class="chip state-chip">{selected.state.replaceAll("_", " ")}</span>
+                <span class="chip state-chip">{selected.planning && selected.completedAt && selected.state !== "cancelled" ? (selected.planning.status === "ready" ? "Reviewed answer" : "Partial result") : selected.state.replaceAll("_", " ")}</span>
                 {!selected.completedAt ? (
                   <button type="button" onClick={cancelRun}>
                     Cancel
@@ -1164,8 +1181,8 @@ export function App() {
               <div>
                 <span>Shared outcome</span>
                 <strong>
-                  {selected.candidate
-                    ? "Candidate ready"
+                  {selected.planning ? (selected.planning.documents.length ? "Document available" : "Pending") : selected.candidate
+                    ? "Candidate available"
                     : selected.completedAt
                       ? "Completed"
                       : "In progress"}
@@ -1174,7 +1191,7 @@ export function App() {
             </div>
             {exportOutcome && exportOutcome.runId === selected.runId ? (
               <p class="export-note">
-                Exported events, transcript, and projection with checksums to{" "}
+                Exported document (when available), events, and review history with checksums to{" "}
                 <code>{exportOutcome.destination}</code>
               </p>
             ) : null}
@@ -1279,6 +1296,7 @@ export function App() {
               onAction={decideAction}
             />
           ) : null}
+          {selected.planning ? <PlanningView key={selected.runId} run={selected} onExport={exportRun} /> : <>
           {selected.completedAt ? (
             <section
               class={`verdict verdict-${selected.state}`}
@@ -1291,11 +1309,7 @@ export function App() {
                     Consensus reached — both models signed the same result
                   </h2>
                   <p>
-                    Codex and Claude finished this goal together: one implemented,
-                    the other independently reviewed and verified, and both signed
-                    the identical outcome manifest. Nothing here required trust in
-                    either model’s self-report — every claim below was checked by
-                    the other side.
+                    Both providers signed the same recorded outcome manifest. Review and recorded checks support assessment of the result; they do not establish that every claim is true.
                   </p>
                   {selected.candidate ? (
                     <ul class="verdict-facts">
@@ -1616,6 +1630,7 @@ export function App() {
               </details>
             ) : null}
           </section>
+          </>}
           <div class="sr-status" role="status" aria-live="polite">
             Collaboration state changed to {selected.state.replaceAll("_", " ")}.
           </div>

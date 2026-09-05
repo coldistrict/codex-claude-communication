@@ -1,0 +1,28 @@
+{
+  "kind": "final implementation verification; fixtures and live results separated",
+  "tests": 244,
+  "testFiles": 37,
+  "build": "passed",
+  "pins": "passed",
+  "modelCallAudit": "passed",
+  "finalCorrectionsLiveRetested": false,
+  "qualityComparison": "protocol and deterministic tests passed; live comparison not run; improvement unproven",
+  "planningBrowser": {
+    "kind": "deterministic browser fixtures",
+    "modelStarts": 0,
+    "passed": true,
+    "clarificationResumed": true,
+    "revisionChanged": true,
+    "exportVerified": true,
+    "historyRestored": true,
+    "optionalProject": true,
+    "seriousCriticalViolations": 0,
+    "overflowPx": 0
+  },
+  "savedHistory": {
+    "runCount": 4,
+    "schemaVersion": 2,
+    "passed": true
+  },
+  "liveSummary": "live-summary.json"
+}

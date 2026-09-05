@@ -27,8 +27,8 @@ const codex = new CodexAppServerClient({
 let codexResult;
 try {
   codexResult = await codex.metadataPreflight({
-    versionMatches: true,
-    schemaMatches: true,
+    versionMatches: false,
+    schemaMatches: false,
     forbiddenEnvironment: scrubbed.forbiddenPresent,
     spawnArgs: ["app-server", "--listen", "stdio://"],
     effectiveProviderOverride: false,
@@ -48,8 +48,8 @@ try {
 
 const claude = new ClaudeAgentAdapter({ cwd: workspace, env: scrubbed.env });
 const claudeResult = await claude.metadataPreflight({
-  versionMatches: true,
-  sdkMatches: true,
+  versionMatches: false,
+  sdkMatches: false,
   forbiddenEnvironment: scrubbed.forbiddenPresent,
   spawnArgs: [],
   apiKeyHelperPresent: false,

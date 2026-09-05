@@ -5,3 +5,6 @@ packages/*/node_modules/
 packages/ui/dist/
 artifacts/*.sqlite*
 artifacts/*.tmp
+# Local verification archives contain state backups and provider runtime logs.
+artifacts/planning-2026-09-04/
+artifacts/pr-2026-09-05/

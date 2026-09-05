@@ -106,3 +106,17 @@ describe("claude burst continuation on turn exhaustion", () => {
     expect(queryCalls).toHaveLength(1);
   });
 });
+
+
+describe('planning SDK tool and turn boundaries', () => {
+  it('disables every tool and never silently continues a planning call after the turn limit', async () => {
+    queryCalls.length=0;
+    scripts=[async function* () { yield init('planning-session'); yield {type:'result',is_error:true,errors:['Reached maximum number of turns (2)']}; }];
+    const adapter=new ClaudeAgentAdapter({cwd:'/tmp/planning'});
+    (adapter as any).billing={route:'subscription_allowance'};
+    await expect(adapter.startBurst({runId:'plan',prompt:'Create a plan',executionProfile:'planning',readOnly:true,maxTurns:2,authorization:{id:'plan-auth',kind:'user_goal',runId:'plan',providers:['claude'],recordedAt:new Date().toISOString()}})).rejects.toThrow('CLAUDE_BURST_FAILED');
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]?.options).toMatchObject({tools:[],mcpServers:{},permissionMode:'dontAsk',maxTurns:2,settingSources:[],strictMcpConfig:true});
+    expect(queryCalls[0]?.options.canUseTool).toBeUndefined();
+  });
+});

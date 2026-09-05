@@ -488,8 +488,8 @@ export class RealCollaborationRunner {
       const [codexPreflight, claudePreflight] = await Promise.all([
         this.tagProviderFailures("codex", () =>
           codex.metadataPreflight({
-            versionMatches: true,
-            schemaMatches: true,
+            versionMatches: false,
+            schemaMatches: false,
             forbiddenEnvironment: scrubbed.forbiddenPresent,
             spawnArgs: ["app-server", "--listen", "stdio://"],
             effectiveProviderOverride: false,
@@ -498,8 +498,8 @@ export class RealCollaborationRunner {
         ),
         this.tagProviderFailures("claude", () =>
           claude.metadataPreflight({
-            versionMatches: true,
-            sdkMatches: true,
+            versionMatches: false,
+            sdkMatches: false,
             forbiddenEnvironment: scrubbed.forbiddenPresent,
             spawnArgs: [],
             apiKeyHelperPresent: false,
@@ -1500,8 +1500,8 @@ export class RealCollaborationRunner {
     const [codexResult, claudeResult] = await Promise.all([
       this.tagProviderFailures("codex", () =>
         codex.metadataPreflight({
-          versionMatches: true,
-          schemaMatches: true,
+          versionMatches: false,
+          schemaMatches: false,
           forbiddenEnvironment,
           spawnArgs: ["app-server", "--listen", "stdio://"],
           effectiveProviderOverride: false,
@@ -1510,8 +1510,8 @@ export class RealCollaborationRunner {
       ),
       this.tagProviderFailures("claude", () =>
         claude.metadataPreflight({
-          versionMatches: true,
-          sdkMatches: true,
+          versionMatches: false,
+          sdkMatches: false,
           forbiddenEnvironment,
           spawnArgs: [],
           apiKeyHelperPresent: false,

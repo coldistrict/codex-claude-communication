@@ -17,6 +17,9 @@ import {
   type PreflightResult,
 } from "./policy.ts";
 
+import { observeRuntime } from './runtime.ts';
+import { redactSecrets } from '@collab/security';
+
 const execFileAsync = promisify(execFile);
 
 export function bundledClaudeCliPath(): string {
@@ -99,14 +102,9 @@ export function parseClaudeBillingUsage(
       ? utilizations.every((utilization) => (utilization as number) < 100)
       : null;
   const extra = rateLimits?.extra_usage;
-  const existingCreditsRemaining =
-    extra?.is_enabled === true &&
-    typeof extra.monthly_limit === "number" &&
-    typeof extra.used_credits === "number"
-      ? extra.used_credits < extra.monthly_limit
-      : extra?.is_enabled === true && typeof extra?.utilization === "number"
-        ? extra.utilization < 100
-        : null;
+  // A monthly spending limit is not proof of a funded prepaid balance.
+  // The observed experimental payload has no verified prepaid-balance field.
+  const existingCreditsRemaining: boolean | null = null;
   const currentRoute =
     includedUsageRemaining === true
       ? "subscription_allowance"
@@ -156,18 +154,23 @@ export class ClaudeAgentAdapter {
   async metadataPreflight(
     input: Omit<ClaudePreflightInput, "auth" | "billing">,
   ): Promise<PreflightResult> {
+    const observed = await observeRuntime('claude', bundledClaudeCliPath());
+    input = { ...input, versionMatches: observed.versionMatches, sdkMatches: observed.sdkMatches };
+    const diagnostics: string[] = [];
     let auth: Record<string, any> | null = null;
     let account: Record<string, any> | null = null;
     let usage: Record<string, any> | null = null;
     try {
       auth = await this.authStatus();
-    } catch {
+    } catch (error) {
+      diagnostics.push(`auth/status: ${redactSecrets(String(error)).slice(0,1500)}`);
       auth = null;
     }
     if (auth?.loggedIn) {
       try {
         ({ account, usage } = await this.controlMetadata());
-      } catch {
+      } catch (error) {
+        diagnostics.push(`control metadata: ${redactSecrets(String(error)).slice(0,1500)}`);
         account = null;
         usage = null;
       }
@@ -197,6 +200,12 @@ export class ClaudeAgentAdapter {
         ...billing,
       },
     });
+    if (diagnostics.length) {
+      result.trace.push(...diagnostics);
+      if (!auth) { result.predicate = 'claude.auth_metadata_unavailable'; result.remedy = 'The official auth-status probe failed. Check the redacted diagnostics and retry; this does not establish a missing login.'; result.billing.blockingPredicate = result.predicate; result.billing.remedy = result.remedy; }
+    }
+    result.trace.push(...observed.trace);
+    result.billing.proof.push(...observed.trace, ...diagnostics);
     this.billing = result.ok ? result.billing : null;
     return result;
   }
@@ -273,7 +282,7 @@ export class ClaudeAgentAdapter {
      * and effort, and a one-use bound authorization. The worker profile
      * never sets these.
      */
-    executionProfile?: "worker" | "advisor";
+    executionProfile?: "worker" | "advisor" | "planning";
     model?: string;
     effort?: string;
     advisorContext?: AdvisorStartContext;
@@ -297,7 +306,7 @@ export class ClaudeAgentAdapter {
     ) {
       throw new Error("CLAUDE_ADVISOR_PROFILE_INCOMPLETE");
     }
-    this.guard.authorize("claude", input.runId, input.authorization, input.advisorContext);
+
     const scrubbed = scrubProviderEnvironment(this.options.env ?? process.env);
     const messages: unknown[] = [];
     let sessionId: string | null = input.sessionId ?? null;
@@ -329,7 +338,7 @@ export class ClaudeAgentAdapter {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (
-          advisor ||
+          advisor || input.executionProfile === "planning" ||
           continuations >= 2 ||
           !sessionId ||
           !message.includes("Reached maximum number of turns")
@@ -371,7 +380,9 @@ export class ClaudeAgentAdapter {
     structuredOutput: unknown;
     usage: { input: number; cachedInput: number; output: number; reasoning: number };
   }> {
+    this.guard.authorize("claude", input.runId, input.authorization, input.advisorContext);
     const scrubbedEnv = env;
+    const isolated = advisor || input.executionProfile === "planning";
     const stream = query({
       prompt,
       options: {
@@ -389,9 +400,9 @@ export class ClaudeAgentAdapter {
         ...(input.model ? { model: input.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
         ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
-        permissionMode: advisor || input.readOnly ? "dontAsk" : "default",
-        ...(advisor ? { tools: [], mcpServers: {} } : {}),
-        disallowedTools: advisor
+        permissionMode: isolated || input.readOnly ? "dontAsk" : "default",
+        ...(isolated ? { tools: [], mcpServers: {} } : {}),
+        disallowedTools: isolated
           ? [
               "Agent",
               "Task",
@@ -422,7 +433,7 @@ export class ClaudeAgentAdapter {
         includePartialMessages: false,
         // The adviser has no canUseTool path at all: with zero tools there is
         // nothing to approve, and no permission decision can be requested.
-        ...(advisor
+        ...(isolated
           ? {}
           : {
               canUseTool: async (
@@ -451,7 +462,7 @@ export class ClaudeAgentAdapter {
       if (candidate.session_id) sink.setSession(String(candidate.session_id));
       if (candidate.type === "result" && candidate.subtype === "success") {
         sink.setOutcome(String(candidate.result ?? ""), candidate.structured_output, {
-          input: Number(candidate.usage?.input_tokens ?? 0),
+          input: Number(candidate.usage?.input_tokens ?? 0) + Number(candidate.usage?.cache_creation_input_tokens ?? 0),
           cachedInput: Number(
             candidate.usage?.cache_read_input_tokens ??
               candidate.usage?.cached_input_tokens ??

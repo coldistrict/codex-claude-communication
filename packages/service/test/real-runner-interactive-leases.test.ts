@@ -23,7 +23,7 @@ function fixture(registry?: InteractiveResourceRegistry) {
   });
   const createRun = (suffix: string) =>
     coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: `Exercise interactive-resource coordination (${suffix}).`,
         workspace,
         mode: "real",

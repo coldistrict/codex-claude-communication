@@ -72,7 +72,7 @@ describe("real collaboration runner with deterministic provider ports", () => {
       publish: () => undefined,
     });
     const runId = coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: "Create and independently verify the exact canary artifact.",
         workspace,
         constraints: ["No network"],

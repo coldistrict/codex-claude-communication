@@ -72,7 +72,7 @@ describe("F-11 advanced controls are immutable and mechanically honored", () => 
     writeFileSync(outside, "outside\n", { mode: 0o600 });
 
     const runId = coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: "Inspect the attachment without changing the workspace.",
         workspace,
         attachmentPaths: ["requirements.md"],
@@ -146,7 +146,7 @@ describe("F-11 advanced controls are immutable and mechanically honored", () => 
 
     expect(() =>
       coordinator.createRun(
-        {
+        { workflow: "execution",
           goal: "Reject an attachment outside the workspace.",
           workspace,
           attachmentPaths: [outside],
@@ -162,7 +162,7 @@ describe("F-11 advanced controls are immutable and mechanically honored", () => 
     const attachment = join(workspace, "evidence.txt");
     writeFileSync(attachment, "immutable evidence\n", { mode: 0o600 });
     const runId = coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: "Produce a read-only, serialized fixture outcome.",
         workspace,
         attachmentPaths: [attachment],
@@ -263,7 +263,7 @@ describe("F-11 advanced controls are immutable and mechanically honored", () => 
   it("interrupts and closes provider work before a duration stop becomes terminal", async () => {
     const { workspace, store, coordinator } = fixture();
     const runId = coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: "Stop this deliberately stalled fixture.",
         workspace,
         stopConditions: { maxDurationMinutes: 0.001 },
@@ -455,7 +455,7 @@ describe("2026-07-28 first-real-run regression", () => {
     const { root, workspace: rawWorkspace, store, coordinator } = fixture();
     mkdirSync(join(rawWorkspace, "docs"));
     const runId = coordinator.createRun(
-      { goal: "Improve the UI of the sibling product.", workspace: rawWorkspace, mode: "real" },
+      { workflow: "execution", goal: "Improve the UI of the sibling product.", workspace: rawWorkspace, mode: "real" },
       true,
     );
     // The goal records the canonical workspace; commands must reference the
@@ -512,7 +512,7 @@ describe("2026-07-28 first-real-run regression", () => {
     const sibling = join(root, "sibling-repo");
     mkdirSync(sibling);
     const runId = coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: "Improve the UI with the sibling repository readable.",
         workspace: rawWorkspace,
         readableRoots: [sibling],
@@ -562,7 +562,7 @@ describe("2026-07-28 first-real-run regression", () => {
   it("auto preset runs workspace commands without a card while hazardous classes still ask", async () => {
     const { workspace, store, coordinator } = fixture();
     const runId = coordinator.createRun(
-      {
+      { workflow: "execution",
         goal: "Improve the UI without permission friction.",
         workspace,
         permissionPreset: "auto",

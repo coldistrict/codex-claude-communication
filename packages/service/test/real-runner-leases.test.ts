@@ -16,7 +16,7 @@ function fixture() {
     publish: () => undefined,
   });
   const runId = coordinator.createRun(
-    {
+    { workflow: "execution",
       goal: "Exercise production lease boundaries.",
       workspace,
       mode: "real",

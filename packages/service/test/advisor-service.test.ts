@@ -204,7 +204,7 @@ function fixture(input?: {
   });
   store.appendListener = (event: StoredEvent) => service.noteEvent(event);
   const runId = coordinator.createRun(
-    {
+    { workflow: "execution",
       goal: "Exercise the advisory supervisor deterministically.",
       workspace,
       mode: "real",

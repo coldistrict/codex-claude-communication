@@ -4,12 +4,13 @@
   "collabdSchemaVersion": 2,
   "codex": {
     "binary": "/Applications/ChatGPT.app/Contents/Resources/codex",
-    "version": "codex-cli 0.146.0-alpha.3.1",
-    "schemaSnapshot": "../tasks/2026-07-25-collaboration-product-blueprint/artifacts/codex-appserver-schema-stable",
-    "combinedSchemaSha256": "7c56957b737cc65ec8ee19c0a30fd2e942349b19da42fca7e67f2c4be3a0ccde",
-    "combinedSchemaCanonicalSha256": "b5719e63be18118f4231ce6d2d797acd4cddeb801ea44e8aceb4b7860fe6947c",
+    "version": "codex-cli 0.153.1",
+    "schemaSnapshot": "artifacts/planning-2026-09-04/codex-schema",
+    "combinedSchemaSha256": "d3eace08be5dca386bfd1f1e8df650058b4113f1e10870a284d775d75517576a",
+    "combinedSchemaCanonicalSha256": "34e30a06f1be8f98dccfb6d47e08ef2237fb07a616f2140ccd86071227d6c403",
     "transport": "stdio://",
-    "serviceTier": "standard"
+    "serviceTier": "standard",
+    "compatibilityNote": "Observed installed desktop runtime, generated schema and required-field contract probes on 2026-09-04. Auto-updates fail closed until revalidated; not an immutable dependency."
   },
   "claude": {
     "sdkPackage": "@anthropic-ai/claude-agent-sdk",

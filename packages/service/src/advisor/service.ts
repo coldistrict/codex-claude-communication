@@ -1037,8 +1037,8 @@ export function realAdvisorPorts(options: {
       return {
         metadataPreflight: () =>
           client.metadataPreflight({
-            versionMatches: true,
-            schemaMatches: true,
+            versionMatches: false,
+            schemaMatches: false,
             forbiddenEnvironment: scrubbed.forbiddenPresent,
             spawnArgs: client.spawnArgs(),
             effectiveProviderOverride: false,
@@ -1079,8 +1079,8 @@ export function realAdvisorPorts(options: {
     return {
       metadataPreflight: () =>
         adapter.metadataPreflight({
-          versionMatches: true,
-          sdkMatches: true,
+          versionMatches: false,
+          sdkMatches: false,
           forbiddenEnvironment: scrubbed.forbiddenPresent,
           spawnArgs: [],
           apiKeyHelperPresent: false,

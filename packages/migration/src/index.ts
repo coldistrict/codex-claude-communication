@@ -1,3 +1,4 @@
+import { documentMarkdown } from '@collab/kernel';
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -205,6 +206,11 @@ export function exportRun(
   );
   writeFileSync(manifestPath, `${canonicalJson(store.projection(runId))}\n`, { mode: 0o600 });
   const files = [jsonlPath, transcriptPath, manifestPath];
+  const planning = store.projection(runId).planning;
+  if (planning?.documents.length) {
+    const path = join(destination, 'document.md');
+    writeFileSync(path, documentMarkdown(planning), { mode: 0o600 }); files.push(path);
+  }
   // Adviser files (observations.jsonl, notes.md, retrospective.md) are copied
   // by content with checksums; symbolic links are never followed.
   if (options.advisorDirectory) {

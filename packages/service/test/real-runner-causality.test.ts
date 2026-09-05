@@ -47,7 +47,7 @@ function fixture(budgets?: { perProvider?: number; perMaterialChallenge?: number
     publish: () => undefined,
   });
   const runId = coordinator.createRun(
-    {
+    { workflow: "execution",
       goal: "Exercise causality, budget, attribution, and cancellation paths.",
       workspace,
       mode: "real",
