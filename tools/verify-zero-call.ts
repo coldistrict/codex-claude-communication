@@ -136,6 +136,7 @@ for (const [file, text] of sources) {
 assertOnlyIn("provider_spawn", perFile(/\bspawn\(/g), { "codex-client.ts": 1 });
 assertOnlyIn("provider_exec_file", perFile(/\bexecFileAsync\(/g), {
   "claude-adapter.ts": 1,
+  "directory-picker.ts": 1,
   "resources.ts": 1,
 });
 

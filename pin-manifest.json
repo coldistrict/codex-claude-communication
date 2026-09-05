@@ -24,21 +24,9 @@
     ]
   },
   "advisor": {
-    "selectionRule": "metadata-only deterministic default row: Codex model/list non-hidden isDefault=true row (exact `model` field); Claude supportedModels() `value: \"default\"` row resolved through `resolvedModel`. Both efforts must be advertised by the selected row; otherwise the provider stays unavailable.",
-    "observedAt": "2026-07-27",
-    "serviceTier": "standard",
-    "codex": {
-      "available": true,
-      "catalogId": "gpt-5.6-sol",
-      "canonicalModel": "gpt-5.6-sol",
-      "efforts": { "high": "high", "medium": "medium" }
-    },
-    "claude": {
-      "available": true,
-      "catalogValue": "default",
-      "canonicalModel": "claude-opus-5[1m]",
-      "efforts": { "high": "high", "medium": "medium" }
-    }
+    "selectionRule": "wake-time default row (auto): every adviser wake re-resolves the provider's current default catalog row — Codex model/list non-hidden isDefault=true row (exact `model` field); Claude supportedModels() `value: \"default\"` row resolved through `resolvedModel`. The chosen effort must be advertised by that row or the wake fails closed. No exact model pin: the adviser follows the provider default exactly like the workers do, and the resolved model is recorded per wake in the adviser ledger.",
+    "changedAt": "2026-07-28",
+    "serviceTier": "standard"
   },
   "overheadGate": {
     "gateVersion": "overhead-gate-v2",

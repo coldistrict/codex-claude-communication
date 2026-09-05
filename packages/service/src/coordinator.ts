@@ -24,7 +24,13 @@ import {
   type PreflightResult,
 } from "@collab/adapters/policy";
 import { digest, EventStore, ReadyQueue } from "@collab/kernel";
-import { isContainedPath, redactSecrets } from "@collab/security";
+import {
+  analyzeCommand,
+  isContainedPath,
+  isScratchPath,
+  redactSecrets,
+  scratchRoots,
+} from "@collab/security";
 import { persistStableOverheadBreach } from "./overhead-notice.ts";
 import type { RealCollaborationRunner } from "./real-runner.ts";
 
@@ -36,7 +42,8 @@ export interface CreateRunInput {
   mode?: "fake" | "preflight_only" | "real";
   budgets?: { perMaterialChallenge?: number; perProvider?: number };
   attachmentPaths?: string[];
-  permissionPreset?: "default" | "read_only";
+  readableRoots?: string[];
+  permissionPreset?: "auto" | "default" | "read_only";
   stopConditions?: { maxDurationMinutes?: number | null };
   resourceMode?: "automatic" | "serialized";
   /** Optional per-run adviser opt-in; disabled when absent. */
@@ -50,6 +57,20 @@ export interface CreateRunInput {
 export interface CoordinatorOptions {
   codexBinary: string;
   publish?: (runId: string) => void;
+  /** Transient live-feed line; see RealRunnerOptions.publishActivity. */
+  publishActivity?: (
+    runId: string,
+    activity: {
+      role: ProviderRole;
+      kind: "tool" | "text" | "status";
+      summary: string;
+    },
+  ) => void;
+  /** Transient model/effort statement; see RealRunnerOptions.publishIdentity. */
+  publishIdentity?: (
+    runId: string,
+    identity: { role: ProviderRole; model: string | null; effort: string | null },
+  ) => void;
   environment?: NodeJS.ProcessEnv;
   resourceState?: () => {
     degraded: boolean;
@@ -96,7 +117,7 @@ export class Coordinator {
     const workspace = realpathSync(resolve(input.workspace));
     if (!statSync(workspace).isDirectory()) throw new Error("WORKSPACE_NOT_DIRECTORY");
     const permissionPreset = input.permissionPreset ?? "default";
-    if (!["default", "read_only"].includes(permissionPreset)) {
+    if (!["auto", "default", "read_only"].includes(permissionPreset)) {
       throw new Error("INVALID_PERMISSION_PRESET");
     }
     const resourceMode = input.resourceMode ?? "automatic";
@@ -120,6 +141,28 @@ export class Coordinator {
     if (!Array.isArray(attachmentPaths) || attachmentPaths.length > 20) {
       throw new Error("INVALID_ATTACHMENTS");
     }
+    const readableRootInputs = input.readableRoots ?? [];
+    if (!Array.isArray(readableRootInputs) || readableRootInputs.length > 16) {
+      throw new Error("INVALID_READABLE_ROOTS");
+    }
+    const readableRoots = [
+      ...new Set(
+        readableRootInputs.map((candidate) => {
+          if (typeof candidate !== "string" || !candidate.trim()) {
+            throw new Error("INVALID_READABLE_ROOT");
+          }
+          const requested = candidate.trim();
+          if (!requested.startsWith("/")) {
+            throw new Error("READABLE_ROOT_MUST_BE_ABSOLUTE");
+          }
+          const path = realpathSync(resolve(requested));
+          if (!statSync(path).isDirectory()) {
+            throw new Error("READABLE_ROOT_NOT_DIRECTORY");
+          }
+          return path;
+        }),
+      ),
+    ].filter((root) => !isContainedPath(workspace, root));
     let advisor: AdvisorConfig | undefined;
     if (input.advisor?.enabled === true) {
       const provider = input.advisor.provider ?? DEFAULT_ADVISOR_CONFIG.provider;
@@ -171,6 +214,7 @@ export class Coordinator {
       attachments,
       authority: {
         writableRoots: permissionPreset === "read_only" ? [] : [workspace],
+        readableRoots,
         network: "off" as const,
         permissionPreset,
       },
@@ -226,17 +270,20 @@ export class Coordinator {
             : label === "Defer"
               ? { behavior: "defer", scope: "once" }
               : { behavior: "deny", scope: "once" };
-      pending.bridge.decide(cardId, decision);
-      if (decision.behavior === "defer") return;
+      // The bridge may narrow the requested scope (task scope is never
+      // honored outside the workspace); the durable record and the provider
+      // translation must both reflect the decision actually applied.
+      const { decision: applied } = pending.bridge.decide(cardId, decision);
+      if (applied.behavior === "defer") return;
       this.append({
         runId,
         actor: "user",
         type: "permission_decided",
         idempotencyKey: `permission:${cardId}:${label}`,
-        payload: { cardId, role: pending.role, decision },
+        payload: { cardId, role: pending.role, decision: applied },
       });
       this.pendingApprovals.delete(cardId);
-      pending.resolve(pending.translate(decision));
+      pending.resolve(pending.translate(applied));
       this.options.publish?.(runId);
       return;
     }
@@ -679,11 +726,27 @@ export class Coordinator {
       for (const [leaseId, payload] of outstandingLeases) {
         const role = payload.role as ProviderRole;
         const lease = payload.lease;
+        // A reconciliation card already pending for this lease means the
+        // user has the decision in front of them; re-posting under a
+        // recurring lease name would collide with the earlier record.
+        if (
+          this.store
+            .projection(runId)
+            .actions.some(
+              (action) =>
+                action.kind === "uncertain_effect" &&
+                (action.id.startsWith(`recovery_${leaseId}`) ||
+                  action.id.startsWith(`uncertain_${leaseId}`)),
+            )
+        ) {
+          continue;
+        }
+        const occurrence = this.store.projection(runId).seq;
         this.append({
           runId,
           actor: "system",
           type: "incarnation_replaced",
-          idempotencyKey: `recovery:stale-lease:${leaseId}`,
+          idempotencyKey: `recovery:stale-lease:${leaseId}:${occurrence}`,
           payload: {
             role,
             leaseId,
@@ -694,12 +757,12 @@ export class Coordinator {
           runId,
           actor: "system",
           type: "uncertain_effect",
-          idempotencyKey: `recovery:uncertain-lease:${leaseId}`,
+          idempotencyKey: `recovery:uncertain-lease:${leaseId}:${occurrence}`,
           payload: {
             role,
             leaseId,
             card: {
-              id: `recovery_${leaseId}`,
+              id: `recovery_${leaseId}_${occurrence}`,
               kind: "uncertain_effect",
               title: Array.isArray(lease.interactiveResources) &&
                 lease.interactiveResources.length
@@ -737,6 +800,12 @@ export class Coordinator {
             ? { environment: this.options.environment }
             : {}),
           publish: (runId) => this.options.publish?.(runId),
+          ...(this.options.publishActivity
+            ? { publishActivity: this.options.publishActivity }
+            : {}),
+          ...(this.options.publishIdentity
+            ? { publishIdentity: this.options.publishIdentity }
+            : {}),
           ...(this.options.resourceState
             ? { resourceState: this.options.resourceState }
             : {}),
@@ -792,7 +861,12 @@ export class Coordinator {
     if (!bridge) {
       const workspace = this.store.projection(runId).goal?.workspace;
       if (!workspace) throw new Error("RUN_GOAL_MISSING");
-      bridge = new ApprovalBridge(workspace);
+      // Scratch directories join the read auto-allow roots so the bridge
+      // agrees with the classifier; write grants stay workspace-only.
+      bridge = new ApprovalBridge(workspace, [
+        ...this.readableRoots(runId),
+        ...scratchRoots(),
+      ]);
       this.bridges.set(runId, bridge);
     }
     return bridge;
@@ -810,7 +884,6 @@ export class Coordinator {
     const network =
       Boolean(message.params?.networkApprovalContext) ||
       Boolean(message.params?.proposedNetworkPolicyAmendments?.length);
-    const classification = this.classifyCommand(command, network);
     const id = String(
       message.params?.approvalId ??
         message.params?.itemId ??
@@ -819,6 +892,13 @@ export class Coordinator {
     const paths = [
       String(message.params?.grantRoot ?? message.params?.cwd ?? workspace),
     ];
+    const classification = this.classifyCommand(
+      command,
+      network,
+      workspace,
+      paths,
+      this.readableRoots(runId),
+    );
     const permissionsRequest = method === "item/permissions/requestApproval";
     return this.requestPermission(
       runId,
@@ -838,7 +918,9 @@ export class Coordinator {
         reversibility: "Review the exact operation; workspace changes may require a manual revert.",
         classification:
           method.includes("fileChange")
-            ? "workspace_write"
+            ? paths.every((path) => isContainedPath(workspace, path))
+              ? "workspace_write"
+              : "outside_workspace"
             : permissionsRequest
               ? message.params?.permissions?.network?.enabled
                 ? "network"
@@ -882,7 +964,13 @@ export class Coordinator {
         context.blockedPath ??
         workspace,
     );
-    const classification = this.classifyClaudeTool(toolName, command, path, workspace);
+    const classification = this.classifyClaudeTool(
+      toolName,
+      command,
+      path,
+      workspace,
+      this.readableRoots(runId),
+    );
     const id = String(context.requestId ?? context.toolUseID ?? `claude_permission_${randomUUID()}`);
     return this.requestPermission(
       runId,
@@ -952,6 +1040,15 @@ export class Coordinator {
       this.options.publish?.(runId);
       return Promise.resolve(translate(decision));
     }
+    if (preset === "auto" && request.classification === "workspace_write") {
+      // The immutable Goal Packet pre-authorizes workspace-contained writes
+      // and commands under this preset; the classifier has already routed
+      // anything outside the workspace or hazardous (destructive, install,
+      // network, system change, …) away from workspace_write, so those
+      // still surface a card. Mutation leases and the live activity feed
+      // remain the audit surface for what actually ran.
+      return Promise.resolve(translate({ behavior: "allow", scope: "once" }));
+    }
     const bridge = this.bridge(runId);
     const evaluated = bridge.evaluate(request);
     if (evaluated.allowed) {
@@ -986,16 +1083,53 @@ export class Coordinator {
     });
   }
 
-  private classifyCommand(command: string, network: boolean): PermissionClass {
+  private classifyCommand(
+    command: string,
+    network: boolean,
+    workspace: string,
+    paths: string[],
+    readableRoots: string[],
+  ): PermissionClass {
     if (network) return "network";
+    const analysis = analyzeCommand(command, workspace);
+    const containedOrScratch = (path: string) =>
+      isContainedPath(workspace, path) || isScratchPath(path);
     if (/\b(?:rm|rmdir|unlink|truncate|git\s+reset|git\s+clean)\b/i.test(command)) {
-      return "destructive";
+      // Deleting inside the workspace (or shared scratch) is no more
+      // destructive than the unrestricted Write/Edit the same sandbox
+      // already permits, so it classifies as an ordinary workspace write.
+      // The always-ask destructive class is reserved for deletions whose
+      // targets cannot be proven contained: any path outside workspace and
+      // scratch, or any unresolvable construct (`rm $X`, substitution).
+      const provablyContained =
+        !analysis.unresolvable &&
+        analysis.outsidePaths.every((path) => isScratchPath(path)) &&
+        paths.every(containedOrScratch);
+      return provablyContained ? "workspace_write" : "destructive";
     }
     if (/\b(?:npm|pnpm|yarn|pip|brew|cargo)\s+(?:i|install|add)\b/i.test(command)) {
       return "install";
     }
     if (/\b(?:curl|wget|ssh|scp|nc)\b/i.test(command)) return "network";
-    return "workspace_write";
+    if (analysis.readOnly) {
+      // Reads may roam the user-declared readable roots and scratch;
+      // anything beyond them still always asks.
+      const readRoots = [workspace, ...readableRoots];
+      const withinRead = (path: string) =>
+        readRoots.some((root) => isContainedPath(root, path)) ||
+        isScratchPath(path);
+      const outside =
+        analysis.outsidePaths.some((path) => !withinRead(path)) ||
+        paths.some((path) => !withinRead(path));
+      return outside ? "outside_workspace" : "read";
+    }
+    // A possibly-writing command touching anything outside the workspace
+    // (scratch excepted) must never be offered as a task-wide grant;
+    // outside_workspace is in the always-ask set.
+    const outside =
+      analysis.outsidePaths.some((path) => !isScratchPath(path)) ||
+      paths.some((path) => !containedOrScratch(path));
+    return outside ? "outside_workspace" : "workspace_write";
   }
 
   private classifyClaudeTool(
@@ -1003,18 +1137,29 @@ export class Coordinator {
     command: string,
     path: string,
     workspace: string,
+    readableRoots: string[],
   ): PermissionClass {
     if (["Read", "Glob", "Grep", "LS"].includes(toolName)) {
-      return isContainedPath(workspace, path) ? "read" : "outside_workspace";
+      return [workspace, ...readableRoots].some((root) =>
+        isContainedPath(root, path),
+      )
+        ? "read"
+        : "outside_workspace";
     }
     if (toolName === "WebFetch" || toolName === "WebSearch") return "network";
-    if (toolName === "Bash") return this.classifyCommand(command, false);
+    if (toolName === "Bash") {
+      return this.classifyCommand(command, false, workspace, [path], readableRoots);
+    }
     if (["Write", "Edit", "NotebookEdit"].includes(toolName)) {
       return isContainedPath(workspace, path)
         ? "workspace_write"
         : "outside_workspace";
     }
     return "system_change";
+  }
+
+  private readableRoots(runId: string): string[] {
+    return this.store.projection(runId).goal?.authority.readableRoots ?? [];
   }
 
   private attachmentMediaType(path: string): string {

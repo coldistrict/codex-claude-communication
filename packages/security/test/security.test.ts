@@ -13,8 +13,10 @@ import {
 } from "@collab/adapters";
 import { createCollabServer } from "@collab/service";
 import {
+  analyzeCommand,
   assertSafeAbsolutePath,
   escapeUntrustedText,
+  isScratchPath,
   redactSecrets,
 } from "../src/index.ts";
 
@@ -173,5 +175,81 @@ describe("V-9 loopback security and secret handling", () => {
 
   it("prints the machine-readable security result", () => {
     console.log('RESULT {"suite":"V-9","passed":true,"unauthorizedAccepted":0,"secretLeaks":0,"forbiddenFlags":0,"modelStarts":0}');
+  });
+});
+
+describe("conservative shell-command analysis", () => {
+  const workspace = "/tmp/collab-analyze-workspace";
+
+  it("proves plain inspection pipelines read-only with workspace-contained paths", () => {
+    const chained = analyzeCommand(
+      `ls -la ${workspace} && echo "---" && cat README.md package.json | head -50`,
+      workspace,
+    );
+    expect(chained).toEqual({ readOnly: true, outsidePaths: [], unresolvable: false });
+    // $PWD is statically the workspace, not an unknown expansion.
+    expect(analyzeCommand(`ls "$PWD/.playwright"`, workspace)).toEqual({
+      readOnly: true,
+      outsidePaths: [],
+      unresolvable: false,
+    });
+    expect(
+      analyzeCommand(`git status && git log --oneline -5`, workspace).readOnly,
+    ).toBe(true);
+    // Stream redirects that write no file must not break the proof.
+    expect(
+      analyzeCommand(`git log --oneline -10 2>/dev/null`, workspace).readOnly,
+    ).toBe(true);
+    expect(analyzeCommand(`ls -la > /dev/null 2>&1`, workspace).readOnly).toBe(true);
+  });
+
+  it("flags paths outside the workspace, including relative escapes and tilde", () => {
+    const outside = analyzeCommand(
+      `cd /Users/someone/source/product && cat README.md`,
+      workspace,
+    );
+    expect(outside.readOnly).toBe(true);
+    expect(outside.outsidePaths).toEqual(["/Users/someone/source/product"]);
+    expect(analyzeCommand("cat ../secrets.txt", workspace).outsidePaths.length).toBe(1);
+    expect(analyzeCommand("cat ~/.ssh/config", workspace).outsidePaths.length).toBe(1);
+    expect(analyzeCommand("cat {/etc/passwd,x}", workspace).outsidePaths.length).toBe(1);
+  });
+
+  it("refuses to prove read-only anything with smuggling potential", () => {
+    for (const command of [
+      "cat file > /tmp/out",
+      "ls `whoami`",
+      "cat $(find . -name secret)",
+      "echo $HOME",
+      "cat ${FILE}",
+      "find . -name '*.tmp' -delete",
+      "find . -exec rm {} +",
+      "sort -o result.txt input.txt",
+      "git log --output=/tmp/log",
+      "git checkout main",
+      "awk '{print}' file",
+      "env cat file",
+      "xargs cat",
+      "sed -i '' file",
+      "npm run build",
+      "",
+    ]) {
+      expect(analyzeCommand(command, workspace).readOnly).toBe(false);
+    }
+  });
+
+  it("keeps mutating and unknown commands unproven while still checking their paths", () => {
+    const write = analyzeCommand("touch /etc/hosts", workspace);
+    expect(write.readOnly).toBe(false);
+    expect(write.outsidePaths).toEqual(["/etc/hosts"]);
+    expect(write.unresolvable).toBe(false);
+    expect(analyzeCommand("rm -rf $TARGET", workspace).unresolvable).toBe(true);
+  });
+
+  it("treats shared scratch directories as scratch, not as foreign paths", () => {
+    expect(isScratchPath("/tmp/h1.txt")).toBe(true);
+    expect(isScratchPath("/private/tmp/x")).toBe(true);
+    expect(isScratchPath("/etc/hosts")).toBe(false);
+    expect(isScratchPath("/tmpfoo/x")).toBe(false);
   });
 });

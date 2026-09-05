@@ -630,13 +630,12 @@ describe("failure keeps interactive leases and blocks the waiting provider", () 
     const cards = reopened
       .projection(runId)
       .actions.filter((action) => action.kind === "uncertain_effect");
-    expect(
-      cards.some(
-        (action) =>
-          action.title.includes("interactive-resource lease needs reconciliation") &&
-          action.body.includes(COMPUTER),
-      ),
-    ).toBe(true);
+    // The burst failure already surfaced the reconciliation card; restart
+    // recovery must keep that single surface rather than posting a
+    // duplicate sibling for the same lease (the duplicate is the trap that
+    // let a stale card cancel a healthy resumed run).
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.body).toContain(COMPUTER);
     reopened.close();
   });
 });

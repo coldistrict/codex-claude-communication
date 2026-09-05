@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,7 @@ let app = createCollabServer({
   stateFile: join(directory, "events.sqlite"),
   uiDirectory,
   legacyTasksRoot: legacyRoot,
+  directoryPicker: async () => directory,
 });
 let address = await app.listen();
 const browser = await chromium.launch({ headless: true });
@@ -68,10 +69,27 @@ try {
     ["serious", "critical"].includes(violation.impact ?? ""),
   );
   if (seriousInitial.length) {
-    throw new Error(`A11Y_INITIAL:${seriousInitial.map((violation) => violation.id).join(",")}`);
+    throw new Error(
+      `A11Y_INITIAL:${seriousInitial
+        .map((violation) => ({
+          id: violation.id,
+          nodes: violation.nodes.map((node) => ({
+            target: node.target,
+            summary: node.failureSummary,
+          })),
+        }))
+        .map((violation) => JSON.stringify(violation))
+        .join(",")}`,
+    );
   }
 
-  await page.getByLabel("Project or workspace").fill(directory);
+  await page.getByRole("button", { name: "Choose folder…" }).click();
+  await page.waitForFunction(
+    (expected) =>
+      (document.querySelector('input[name="workspace"]') as HTMLInputElement | null)
+        ?.value === expected,
+    realpathSync(directory),
+  );
   await page
     .getByLabel("What should Codex and Claude accomplish together?")
     .fill("Create one accessible deterministic collaboration fixture.");
@@ -88,6 +106,7 @@ try {
     .getByRole("heading", { name: "Create one accessible deterministic collaboration fixture." })
     .waitFor();
   await page.getByText("Demo billing — not a proven route").first().waitFor();
+  await page.getByText("Run details", { exact: true }).click();
   await page.getByText("Sandbox: read-only").waitFor();
   await page.getByText("Resources: serialized").waitFor();
   await page.getByText("Stop: 7 min").waitFor();
@@ -99,11 +118,23 @@ try {
     ["serious", "critical"].includes(violation.impact ?? ""),
   );
   if (seriousRun.length) {
-    throw new Error(`A11Y_RUN:${seriousRun.map((violation) => violation.id).join(",")}`);
+    throw new Error(
+      `A11Y_RUN:${seriousRun
+        .map((violation) => ({
+          id: violation.id,
+          nodes: violation.nodes.map((node) => ({
+            target: node.target,
+            summary: node.failureSummary,
+          })),
+        }))
+        .map((violation) => JSON.stringify(violation))
+        .join(",")}`,
+    );
   }
   const liveRegions = await page.locator("[aria-live]").count();
   if (liveRegions !== 1) throw new Error(`LIVE_REGION_ALLOWLIST:${liveRegions}`);
 
+  await page.getByRole("button", { name: "Create run" }).click();
   await page.setViewportSize({ width: 640, height: 900 });
   await page.evaluate(() => {
     document.documentElement.style.zoom = "2";
@@ -123,6 +154,7 @@ try {
     const style = active ? getComputedStyle(active) : null;
     return {
       tag: active?.tagName ?? null,
+      text: active?.textContent ?? null,
       name: active?.getAttribute("name") ?? null,
       outlineStyle: style?.outlineStyle ?? null,
       outlineWidth: style?.outlineWidth ?? null,
@@ -137,11 +169,20 @@ try {
     };
   });
   if (
-    focusState.tag !== "TEXTAREA" ||
-    focusState.name !== "goal" ||
+    focusState.tag !== "BUTTON" ||
+    focusState.text?.trim() !== "Choose folder…" ||
     focusState.focusRule !== true
   ) {
     throw new Error(`KEYBOARD_FOCUS_MISSING:${JSON.stringify(focusState)}`);
+  }
+  await page.keyboard.press("Tab");
+  if (
+    (await page.evaluate(() => ({
+      tag: document.activeElement?.tagName ?? null,
+      name: document.activeElement?.getAttribute("name") ?? null,
+    }))).name !== "goal"
+  ) {
+    throw new Error("KEYBOARD_FOCUS_DID_NOT_REACH_GOAL");
   }
 
   const sequence = await page
@@ -203,6 +244,7 @@ try {
     stateFile: join(directory, "events.sqlite"),
     uiDirectory,
     legacyTasksRoot: legacyRoot,
+    directoryPicker: async () => directory,
   });
   address = await app.listen(restartPort);
   await page.reload();
@@ -238,6 +280,7 @@ try {
   if ((await page.locator(".advisor-lane").count()) !== 0) {
     throw new Error("ADVISOR_LANE_VISIBLE_WHILE_DISABLED");
   }
+  await page.getByRole("button", { name: "Create run" }).click();
   await page.getByLabel("Project or workspace").fill(directory);
   await page
     .getByLabel("What should Codex and Claude accomplish together?")
@@ -396,11 +439,32 @@ try {
     })
     .waitFor();
 
+  await page.emulateMedia({ colorScheme: "dark" });
+  const darkAxe = await new AxeBuilder({ page: page as any }).analyze();
+  const seriousDark = darkAxe.violations.filter((violation) =>
+    ["serious", "critical"].includes(violation.impact ?? ""),
+  );
+  if (seriousDark.length) {
+    throw new Error(
+      `A11Y_DARK:${seriousDark
+        .map((violation) => ({
+          id: violation.id,
+          nodes: violation.nodes.map((node) => ({
+            target: node.target,
+            summary: node.failureSummary,
+          })),
+        }))
+        .map((violation) => JSON.stringify(violation))
+        .join(",")}`,
+    );
+  }
+
   process.stdout.write(
     `RESULT ${JSON.stringify({
       suite: "V-11",
       passed: true,
       seriousCriticalViolations: 0,
+      seriousCriticalDarkViolations: 0,
       keyboardComplete: true,
       liveRegions,
       reflowOverflowPx: overflow,

@@ -59,6 +59,55 @@ describe("V-2 recovery semantics", () => {
     store.close();
   });
 
+  it("retires every reconciliation card when the user chooses to retry", () => {
+    const { store } = tempStore();
+    const runId = "run_retry_retire";
+    store.append({
+      runId,
+      actor: "user",
+      type: "goal_set",
+      idempotencyKey: "goal",
+      payload: { goal: goal(runId) },
+    });
+    for (const id of ["uncertain_lease_9", "recovery_lease_9"]) {
+      store.append({
+        runId,
+        actor: "system",
+        type: "uncertain_effect",
+        idempotencyKey: `uncertain:${id}`,
+        payload: {
+          role: "codex",
+          leaseId: "lease_9",
+          card: {
+            id,
+            kind: "uncertain_effect",
+            title: "codex may have left an uncertain workspace effect",
+            body: "Reconcile before continuing.",
+            agent: "codex",
+            actions: ["Retry collaboration", "Cancel"],
+          },
+        },
+      });
+    }
+    expect(store.projection(runId).actions).toHaveLength(2);
+    // Retrying on one card is the user's reconciliation of the workspace as
+    // a whole; the restart-recovery sibling must not survive to cancel the
+    // healthy resumed run with a later click.
+    store.append({
+      runId,
+      actor: "user",
+      type: "human_override",
+      idempotencyKey: "override:retry",
+      payload: { cardId: "uncertain_lease_9", decision: "retry_collaboration" },
+    });
+    const projection = store.projection(runId);
+    expect(
+      projection.actions.filter((action) => action.kind === "uncertain_effect"),
+    ).toHaveLength(0);
+    expect(projection.state).toBe("negotiating");
+    store.close();
+  });
+
   it("prints the machine-readable recovery result", () => {
     console.log('RESULT {"suite":"V-2-recovery","passed":true,"modelStarts":0}');
   });

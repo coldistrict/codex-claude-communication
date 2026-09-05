@@ -17,6 +17,10 @@ history. Starting a collaboration performs metadata-only billing preflight
 first. No provider turn starts unless both routes are proven as either
 `subscription_allowance` or `existing_credits`.
 
+Use **Choose folder…** in the New collaboration form to select a local project
+or workspace with the operating system's native folder dialog. Entering an
+absolute path manually remains available as a fallback.
+
 The product uses:
 
 - the pinned Codex app-server over JSON-RPC/stdio;

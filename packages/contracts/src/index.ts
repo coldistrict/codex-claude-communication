@@ -173,8 +173,18 @@ export interface GoalPacket {
   }>;
   authority: {
     writableRoots: string[];
+    /**
+     * Extra roots the agents may read (never write) without a card, beyond
+     * the workspace itself. Absent on goals recorded before 2026-07-28.
+     */
+    readableRoots?: string[];
     network: "off" | "ask";
-    permissionPreset: "default" | "read_only";
+    /**
+     * auto: workspace-contained writes and commands run without a card
+     * (hazardous classes still ask). default: ask before the first
+     * workspace mutation. read_only: mechanically deny all mutations.
+     */
+    permissionPreset: "auto" | "default" | "read_only";
   };
   stopConditions?: {
     maxDurationMinutes: number | null;
@@ -246,6 +256,38 @@ export interface ActionCard {
   requiresDetailsFor?: string[];
   detailsLabel?: string;
   actions: string[];
+}
+
+/**
+ * One live-observability line about what a provider is doing right now:
+ * a tool invocation, a text fragment, or a lifecycle status. Entries are
+ * transient (in-memory ring per run, streamed over SSE) — the durable
+ * record stays the hash-chained event log; losing the feed on restart is
+ * acceptable and expected.
+ */
+export interface AgentActivityEntry {
+  seq: number;
+  ts: string;
+  runId: string;
+  role: ProviderRole;
+  kind: "tool" | "text" | "status";
+  /** Redacted, length-capped human-readable line. */
+  summary: string;
+}
+
+/**
+ * Transient, per-run statement of which model a worker is actually running
+ * on and at what reasoning effort, observed from provider responses (Codex
+ * thread responses and reroute notifications; Claude session init). Same
+ * lifecycle as the activity feed: in-memory, SSE-streamed, lost on restart.
+ */
+export interface AgentModelIdentity {
+  runId: string;
+  role: ProviderRole;
+  model: string | null;
+  /** null when the provider did not report an effort (CLI default applies). */
+  effort: string | null;
+  observedAt: string;
 }
 
 export type KernelEventType =
@@ -341,7 +383,17 @@ export interface RunProjection {
   barrierReleased: boolean;
   packets: PublicPacket[];
   candidate: { manifest: OutcomeManifest; digest: string; verificationDigest: string } | null;
-  signoffs: Partial<Record<ProviderRole, { manifestDigest: string; verificationDigest: string }>>;
+  signoffs: Partial<
+    Record<
+      ProviderRole,
+      {
+        manifestDigest: string;
+        verificationDigest: string;
+        /** The model's own signing rationale; absent on pre-2026-07-29 events. */
+        rationale?: string;
+      }
+    >
+  >;
   materialChallenges: Record<string, { status: "open" | "resolved"; positions: string[] }>;
   actions: ActionCard[];
   budgets: BudgetProjection;

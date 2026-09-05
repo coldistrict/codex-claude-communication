@@ -212,6 +212,7 @@ export function applyEvent(current: RunProjection, event: StoredEvent): RunProje
       next.signoffs[role] = {
         manifestDigest: payload.manifestDigest,
         verificationDigest: payload.verificationDigest,
+        ...(payload.rationale ? { rationale: String(payload.rationale) } : {}),
       };
       next.workers[role].state = "signed";
       break;
@@ -248,6 +249,15 @@ export function applyEvent(current: RunProjection, event: StoredEvent): RunProje
     case "human_override":
       if (payload.cardId) {
         next.actions = next.actions.filter((action) => action.id !== payload.cardId);
+      }
+      if (payload.decision === "retry_collaboration") {
+        // Retrying is the user's reconciliation of the workspace state as a
+        // whole. A stale sibling reconciliation card (e.g. one from restart
+        // recovery for the same lease) must not survive to cancel the
+        // healthy resumed run with a later click.
+        next.actions = next.actions.filter(
+          (action) => action.kind !== "uncertain_effect",
+        );
       }
       if (!TERMINAL_RUN_STATES.has(next.state)) next.state = "negotiating";
       break;
