@@ -270,6 +270,7 @@ export class ClaudeAgentAdapter {
     runId: string;
     prompt: string;
     systemPrompt?: string;
+    sessionTitle?: string;
     sessionId?: string;
     authorization: ModelAuthorization;
     outputSchema?: Record<string, unknown>;
@@ -394,6 +395,8 @@ export class ClaudeAgentAdapter {
           : {}),
         maxTurns: advisor ? 1 : input.maxTurns ?? 8,
         ...(resumeSessionId ? { resume: resumeSessionId } : {}),
+        ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
+        ...(input.executionProfile === "planning" ? { persistSession: true } : {}),
         ...(input.outputSchema
           ? { outputFormat: { type: "json_schema", schema: input.outputSchema } }
           : {}),

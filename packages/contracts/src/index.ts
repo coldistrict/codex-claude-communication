@@ -155,10 +155,19 @@ export interface BillingStatus {
   remedy?: string;
 }
 
+export interface PlanningModelSelection {
+  /** "default" follows the provider catalog; explicit choices never fall back. */
+  model: string;
+  effort: "medium" | "high";
+}
+export type PlanningModels = Partial<Record<ProviderRole, PlanningModelSelection>>;
+
 export interface GoalPacket {
   /** Absent on historical implementation runs. */
   workflow?: "planning" | "execution";
   projectContext?: string | null;
+  /** Immutable selections for this planning run, including after restart. */
+  planningModels?: PlanningModels;
   id: string;
   runId: string;
   goal: string;

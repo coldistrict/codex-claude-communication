@@ -6,6 +6,7 @@ import {
   statSync,
 } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 import { dirname, extname, join, normalize } from "node:path";
 import { URL } from "node:url";
 import type {
@@ -138,6 +139,17 @@ export function createCollabServer(options: CollabServerOptions) {
     },
   });
   const resources = new ResourceGovernor();
+  // Browser cookies are shared across localhost ports. Distinct databases
+  // need distinct cookie names; the stable file identity also survives restart.
+  const sessionCookieName = `collab_session_${createHash('sha256')
+    .update(options.stateFile === ':memory:' ? sessions.capability : realpathSync(options.stateFile))
+    .digest('hex').slice(0, 16)}`;
+  function sessionToken(request: IncomingMessage): string | undefined {
+    const cookies = parseCookies(request.headers.cookie);
+    // Existing installations upgrade their legacy cookie on session restore.
+    // The token must still validate against this database's own session table.
+    return cookies[sessionCookieName] ?? cookies.collab_session;
+  }
   const directoryPicker = options.directoryPicker ?? pickNativeDirectory;
   let directoryPickerActive = false;
   const subscribers = new Set<ServerResponse>();
@@ -236,7 +248,7 @@ export function createCollabServer(options: CollabServerOptions) {
   }
 
   function sessionFor(request: IncomingMessage, mutating = false) {
-    const token = parseCookies(request.headers.cookie).collab_session;
+    const token = sessionToken(request);
     if (mutating) {
       requireOrigin(request);
       return sessions.validateCsrf(
@@ -323,16 +335,16 @@ export function createCollabServer(options: CollabServerOptions) {
         requireOrigin(request);
         const body = await readBody(request);
         const session = sessions.exchange(String(body.capability ?? ""));
-        response.setHeader("Set-Cookie", sessionCookie(session.token, Math.floor((session.expiresAt - Date.now()) / 1000)));
+        response.setHeader("Set-Cookie", sessionCookie(session.token, Math.floor((session.expiresAt - Date.now()) / 1000), sessionCookieName));
         json(response, 200, { csrf: session.csrf, expiresAt: session.expiresAt });
         return;
       }
       if (request.method === "POST" && url.pathname === "/session/restore") {
         requireOrigin(request);
-        const currentToken = parseCookies(request.headers.cookie).collab_session;
+        const currentToken = sessionToken(request);
         sessions.validate(currentToken);
         const session = sessions.rotate(currentToken!);
-        response.setHeader("Set-Cookie", sessionCookie(session.token, Math.floor((session.expiresAt - Date.now()) / 1000)));
+        response.setHeader("Set-Cookie", sessionCookie(session.token, Math.floor((session.expiresAt - Date.now()) / 1000), sessionCookieName));
         json(response, 200, { csrf: session.csrf, expiresAt: session.expiresAt });
         return;
       }

@@ -6,6 +6,7 @@ import {
   type AdvisorConfig,
   type AppendCommand,
   type GoalPacket,
+  type PlanningModels,
   type ProviderRole,
   type PublicPacket,
 } from "@collab/contracts";
@@ -38,6 +39,7 @@ import { PlanningRunner, type PlanningOptions } from './planning-runner.ts';
 
 export interface CreateRunInput {
   workflow?: 'planning' | 'execution';
+  planningModels?: PlanningModels;
   goal: string;
   workspace?: string;
   constraints?: string[];
@@ -123,6 +125,15 @@ export class Coordinator {
     if (!['planning','execution'].includes(workflow)) throw new Error('INVALID_WORKFLOW');
     if (input.mode && !['fake','preflight_only','real'].includes(input.mode)) throw new Error('INVALID_RUN_MODE');
     if (workflow === 'planning' && input.mode === 'fake') throw new Error('PLANNING_FIXTURE_REQUIRES_INJECTED_PORT');
+    let planningModels: PlanningModels | undefined;
+    if (input.planningModels !== undefined) {
+      if (workflow !== 'planning' || !input.planningModels || typeof input.planningModels !== 'object' || Array.isArray(input.planningModels)) throw new Error('INVALID_PLANNING_MODELS');
+      planningModels = {};
+      for (const [role, selection] of Object.entries(input.planningModels)) {
+        if (!['codex', 'claude'].includes(role) || !selection || typeof selection.model !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._\[\]-]{0,99}$/.test(selection.model) || !['medium', 'high'].includes(selection.effort)) throw new Error('INVALID_PLANNING_MODELS');
+        planningModels[role as ProviderRole] = { model: selection.model, effort: selection.effort };
+      }
+    }
     for (const value of [input.budgets?.perProvider, input.budgets?.perMaterialChallenge]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 1 || value > 200)) throw new Error('INVALID_WORK_BUDGET');
     const runId = `run_${randomUUID()}`;
     if (workflow === 'planning' && input.advisor?.enabled) throw new Error('ADVISER_OUTSIDE_PLANNING_PATH');
@@ -223,6 +234,7 @@ export class Coordinator {
     const base = {
       workflow,
       projectContext: workflow === "planning" ? (input.workspace?.trim() ? workspace : null) : null,
+      ...(planningModels ? { planningModels } : {}),
       goal: redactSecrets(input.goal.trim()),
       workspace,
       constraints: (input.constraints ?? []).map((constraint) =>

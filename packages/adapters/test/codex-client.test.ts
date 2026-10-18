@@ -38,6 +38,7 @@ describe("Codex advisor execution profile", () => {
       params: Record<string, unknown>,
     ) => {
       calls.push({ method, params });
+      if (method === "thread/name/set") return {};
       if (method === "thread/start") {
         return {
           thread: { id: "thread_adv", model: threadModel },
@@ -60,6 +61,14 @@ describe("Codex advisor execution profile", () => {
     await client.runBurst({ runId:'plan', prompt:'Make a plan', systemPrompt:'No tools', executionProfile:'planning', outputSchema:{type:'object'}, authorization:{id:'plan-auth',kind:'user_goal',runId:'plan',providers:['codex'],recordedAt:new Date().toISOString()} });
     expect(guard.started).toBe(1);
     expect(calls.find(c=>c.method==='thread/start')?.params).toMatchObject({sandbox:'read-only',approvalPolicy:'never',developerInstructions:'No tools',config:{web_search:'disabled',features:{shell_tool:false,code_mode_host:false,multi_agent:false}}});
+  });
+
+  it('names planning sessions before generation and keeps the project folder with instructions disabled', async () => {
+    const { client, calls } = advisorClient('gpt-6-astra');
+    await client.runBurst({ runId: 'plan', prompt: 'Shared evidence', sessionTitle: 'Learning TypeScript · Proposal · plan', systemPrompt: 'No tools', executionProfile: 'planning', authorization: { id: 'plan-auth', kind: 'user_goal', runId: 'plan', providers: ['codex'], recordedAt: new Date().toISOString() } });
+    expect(calls.map(c => c.method)).toEqual(['thread/start', 'thread/name/set', 'turn/start']);
+    expect(calls[0]?.params).toMatchObject({ cwd: '/tmp/advisor-runtime', sandbox: 'read-only', config: { project_doc_max_bytes: 0, web_search: 'disabled' } });
+    expect(calls[1]?.params).toEqual({ threadId: 'thread_adv', name: 'Learning TypeScript · Proposal · plan' });
   });
 
   it("passes exact model, effort, outputSchema, read-only sandbox, and never-approve", async () => {

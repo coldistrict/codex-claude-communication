@@ -44,8 +44,13 @@ try {
     viewport: { width: 1280, height: 900 },
   });
   const page = await context.newPage();
-  await page.goto(address.launchUrl.replace("/#", "/?adapter=fake#"));
-  await page.getByRole("heading", { name: "New collaboration" }).waitFor();
+  const launchUrl = address.launchUrl.replace("/#", "/?adapter=fake#");
+  // Pasting a launch link into the existing error tab changes only its hash.
+  // It must initiate sign-in without requiring the user to refresh manually.
+  await page.goto(launchUrl.split("#")[0]!);
+  await page.getByText(/dashboard session.*expired/i).waitFor();
+  await page.goto(launchUrl);
+  await page.getByRole("heading", { name: "New collaboration" }).waitFor({ timeout: 5_000 });
   await page.getByRole("heading", { name: "Legacy task folders" }).waitFor();
   await page
     .getByRole("button", { name: /legacy-escaped-fixture/i })
@@ -134,7 +139,7 @@ try {
   const liveRegions = await page.locator("[aria-live]").count();
   if (liveRegions !== 1) throw new Error(`LIVE_REGION_ALLOWLIST:${liveRegions}`);
 
-  await page.getByRole("button", { name: "Create run" }).click();
+  await page.getByRole("button", { name: "New collaboration" }).click();
   await page.setViewportSize({ width: 640, height: 900 });
   await page.evaluate(() => {
     document.documentElement.style.zoom = "2";
@@ -200,6 +205,7 @@ try {
       name: "Create a second persisted collaboration fixture.",
     })
     .waitFor();
+  await page.getByRole("button", { name: /^Collaborations \d+$/ }).click();
   await page.locator(".run-item").nth(1).waitFor();
   const renderedRunCount = await page.locator(".run-item").count();
   if (renderedRunCount !== 2) {
@@ -257,6 +263,7 @@ try {
   if ((await page.locator(".run-item").count()) !== 3) {
     throw new Error("MULTI_RUN_HISTORY_NOT_RESTORED");
   }
+  await page.getByRole("button", { name: /^Collaborations \d+$/ }).click();
   await page
     .getByRole("button", {
       name: /Create one accessible deterministic collaboration fixture\./,
@@ -280,7 +287,7 @@ try {
   if ((await page.locator(".advisor-lane").count()) !== 0) {
     throw new Error("ADVISOR_LANE_VISIBLE_WHILE_DISABLED");
   }
-  await page.getByRole("button", { name: "Create run" }).click();
+  await page.getByRole("button", { name: "New collaboration" }).click();
   await page.getByLabel("Project or workspace").fill(directory);
   await page
     .getByLabel("What should Codex and Claude accomplish together?")
@@ -439,7 +446,15 @@ try {
     })
     .waitFor();
 
+  const lightTimeColor = await page.locator('time').first().evaluate(node => getComputedStyle(node).color);
   await page.emulateMedia({ colorScheme: "dark" });
+  // One animation frame can still precede Chromium's media/style update.
+  // Wait for the actual inherited foreground to change before axe samples it.
+  await page.waitForFunction(lightColor => {
+    const times = [...document.querySelectorAll('time')];
+    return matchMedia('(prefers-color-scheme: dark)').matches && times.length > 0 &&
+      times.every(node => getComputedStyle(node).color !== lightColor);
+  }, lightTimeColor);
   const darkAxe = await new AxeBuilder({ page: page as any }).analyze();
   const seriousDark = darkAxe.violations.filter((violation) =>
     ["serious", "critical"].includes(violation.impact ?? ""),
@@ -471,6 +486,7 @@ try {
       eventRenderMs: Number(renderLatencyMs.toFixed(2)),
       sseDuplicates: 0,
       restartRestored: true,
+      launchLinkRecovery: true,
       multiRunHistoryRestored: true,
       actionCardRestored: true,
       legacyBrowserEscaped: true,

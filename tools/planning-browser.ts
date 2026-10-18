@@ -30,7 +30,7 @@ try {
  const body=readFileSync(join(root,'exports',id,'document.md'),'utf8');assert.ok(body.includes('Revised plan 2'));assert.ok(body.includes('claude: approved'));
  const axe=await new AxeBuilder({page:page as any}).analyze();const severe=axe.violations.filter(v=>['serious','critical'].includes(v.impact??''));assert.deepEqual(severe,[]);
  await page.screenshot({path:join(evidence,'document-desktop.png'),fullPage:true});
- await page.emulateMedia({colorScheme:'dark'});const dark=await new AxeBuilder({page:page as any}).analyze();assert.deepEqual(dark.violations.filter(v=>['serious','critical'].includes(v.impact??'')),[]);await page.screenshot({path:join(evidence,'document-dark.png'),fullPage:true});await page.emulateMedia({colorScheme:'light'});
+ await page.emulateMedia({colorScheme:'dark'});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>r(null))));const dark=await new AxeBuilder({page:page as any}).analyze();assert.deepEqual(dark.violations.filter(v=>['serious','critical'].includes(v.impact??'')),[]);await page.screenshot({path:join(evidence,'document-dark.png'),fullPage:true});await page.emulateMedia({colorScheme:'light'});
  await page.setViewportSize({width:390,height:844});const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);assert.ok(overflow<=1,`overflow ${overflow}`);await page.screenshot({path:join(evidence,'document-mobile.png'),fullPage:true});
  await app.close();app=createCollabServer(options);address=await app.listen();await page.goto(address.launchUrl);await page.getByRole('heading',{name:'A practical starting plan'}).waitFor();assert.equal(app.store.projection(id).planning!.documents.length,2);
  assert.deepEqual(errors,[]);

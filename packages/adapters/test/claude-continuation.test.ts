@@ -109,6 +109,16 @@ describe("claude burst continuation on turn exhaustion", () => {
 
 
 describe('planning SDK tool and turn boundaries', () => {
+  it('persists a titled session in the selected project without loading project settings or resuming a peer', async () => {
+    queryCalls.length = 0;
+    scripts = [async function* () { yield init('project-session'); yield { type: 'result', subtype: 'success', result: 'Plan', usage: { input_tokens: 10, output_tokens: 5 } }; }];
+    const adapter = new ClaudeAgentAdapter({ cwd: '/tmp/Learning TypeScript' });
+    (adapter as any).billing = { route: 'subscription_allowance' };
+    const result = await adapter.startBurst({ runId: 'plan', prompt: 'Shared evidence', sessionTitle: 'Learning TypeScript · Proposal · plan', executionProfile: 'planning', systemPrompt: 'Use supplied context only', authorization: { id: 'plan-auth', kind: 'user_goal', runId: 'plan', providers: ['claude'], recordedAt: new Date().toISOString() } });
+    expect(result.sessionId).toBe('project-session');
+    expect(queryCalls[0]?.options).toMatchObject({ cwd: '/tmp/Learning TypeScript', title: 'Learning TypeScript · Proposal · plan', persistSession: true, tools: [], settingSources: [], strictMcpConfig: true, permissionMode: 'dontAsk' });
+    expect(queryCalls[0]?.options.resume).toBeUndefined();
+  });
   it('disables every tool and never silently continues a planning call after the turn limit', async () => {
     queryCalls.length=0;
     scripts=[async function* () { yield init('planning-session'); yield {type:'result',is_error:true,errors:['Reached maximum number of turns (2)']}; }];

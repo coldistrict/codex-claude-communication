@@ -19,6 +19,7 @@
     "canary": "node --import tsx tools/canary.ts",
     "verify:all": "node --import tsx tools/run-all.ts",
     "verify:planning-ui": "PLAYWRIGHT_BROWSERS_PATH=.playwright node --import tsx tools/planning-browser.ts",
+    "verify:ui-regressions": "PLAYWRIGHT_BROWSERS_PATH=.playwright node --import tsx tools/ui-regressions.ts",
     "evaluate:planning": "node --import tsx tools/planning-evaluation.ts"
   },
   "dependencies": {

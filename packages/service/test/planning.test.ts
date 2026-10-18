@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { EventStore, assessDocument, documentDigest } from '@collab/kernel';
 import { exportRun } from '@collab/migration';
 import { Coordinator } from '../src/coordinator.ts';
-import { normalizeClaimSupport } from '../src/planning-runner.ts';
+import { normalizeClaimSupport, normalizeConditions, describePlanningFailure, repairHint } from '../src/planning-runner.ts';
 import type { PlanningCall, PlanningOptions } from '../src/planning-runner.ts';
 import { fixturePort } from './planning-fixture.ts';
 
@@ -85,6 +85,53 @@ describe('live-trial regressions',()=>{
  });
 });
 
+
+describe('fourth live trial regression: structured-output rejections are repaired, not fatal',()=>{
+ const required=['Explicitly address each of the five numbered requirements.'];
+ // Recorded shape of the rejected live Opus proposal: trailing period dropped and five volunteered "Req N" conditions.
+ const liveConditions=[{condition:'Explicitly address each of the five numbered requirements',status:'met',reason:'Each requirement receives a verdict.'},{condition:'Req 1: nightly reconciliation under 45 minutes',status:'unknown',reason:'No measurement exists yet.'},{condition:'Req 2: stock-take never observes partial data',status:'met',reason:'Atomic publish.'}];
+ it('maps tolerant condition text onto the required strings and keeps volunteered conditions as notes',()=>{
+  const output:any={conditions:structuredClone(liveConditions),unresolved:[]};
+  normalizeConditions(output,required,true);
+  expect(output.conditions).toEqual([{condition:required[0],status:'met',reason:'Each requirement receives a verdict.'}]);
+  expect(output.unresolved).toHaveLength(2);expect(output.unresolved[0]).toContain('Req 1');expect(output.unresolved[0]).toContain('unknown');
+  const review:any={conditions:[{condition:'  explicitly address EACH of the five numbered requirements. ',status:'met',reason:''},{condition:'Extra',status:'met',reason:''}]};
+  normalizeConditions(review,required,false);expect(review.conditions).toEqual([{condition:required[0],status:'met',reason:''}]);
+  const untouched:any={conditions:[{condition:'Other',status:'met',reason:''}],unresolved:[]};normalizeConditions(untouched,[],true);expect(untouched.conditions).toEqual([]);expect(untouched.unresolved).toHaveLength(1);
+ });
+ it('accepts the recorded live proposal shape through the full coordinator path without any repair call',async()=>{
+  const calls:PlanningCall[]=[];const base=fixturePort({conditions:required,calls});
+  const f=setup({conditions:required},{portFactory:()=>({...base,call:async input=>{const r=await base.call(input) as any;if(input.phase==='proposal'&&input.role==='claude')r.output.result.conditions=structuredClone(liveConditions);return r;}})});
+  await f.run();const p=f.store.projection(f.id);expect(p.state).toBe('completed_consensus');expect(calls).toHaveLength(7);
+  const proposal=p.planning!.steps.find(s=>s.key==='0|proposal:claude')!.output as any;expect(proposal.conditions).toHaveLength(1);expect(proposal.conditions[0].condition).toBe(required[0]);expect(proposal.unresolved.join()).toContain('Req 1');
+  expect(p.planning!.steps.some(s=>s.phase==='output_rejected')).toBe(false);f.store.close();
+ });
+ it('re-requests a structurally invalid answer once with the rejection reason, then continues',async()=>{
+  const calls:PlanningCall[]=[];const base=fixturePort({calls});let claudeProposals=0;
+  const f=setup({},{portFactory:()=>({...base,call:async input=>{if(input.phase==='proposal'&&input.role==='claude'&&claudeProposals++===0){calls.push(input);return {output:'not json at all',usage:{input:50,cachedInput:0,output:5,reasoning:0},usageComplete:true};}return base.call(input);}})});
+  await f.run();const p=f.store.projection(f.id);expect(p.state).toBe('completed_consensus');expect(calls).toHaveLength(8);
+  const retry=calls.filter(c=>c.phase==='proposal'&&c.role==='claude');expect(retry).toHaveLength(2);expect(retry[0]!.prompt).not.toContain('rejected before it could be used');expect(retry[1]!.prompt).toContain('PLANNING_OUTPUT_NOT_JSON');expect(retry[1]!.prompt).toContain('no surrounding prose');
+  expect(JSON.parse(retry[1]!.prompt.slice(retry[1]!.prompt.lastIndexOf('\n\n')+2)).brief).toContain('learning plan');
+  const rejected=p.planning!.steps.filter(s=>s.phase==='output_rejected');expect(rejected).toHaveLength(1);expect((rejected[0]!.output as any).code).toBe('PLANNING_OUTPUT_NOT_JSON');
+  expect(p.planning!.steps.filter(s=>s.phase==='usage')).toHaveLength(8);f.store.close();
+ });
+ it('stops with a retryable, plain-language card after the repair attempt also fails, and Retry collaboration resumes the stage',async()=>{
+  const calls:PlanningCall[]=[];const base=fixturePort({calls});let broken=true;
+  const f=setup({},{portFactory:()=>({...base,call:async input=>{if(broken&&input.phase==='cross_review'&&input.role==='codex'){calls.push(input);return {output:{question:'',result:{verdict:'approved',rationale:'Fine.',objections:[{id:'x',severity:'material',issue:'Contradiction.',correction:'Fix it.',evidenceIds:['E1']}],conditions:[]}},usage:{input:10,cachedInput:0,output:5,reasoning:0},usageComplete:true};}return base.call(input);}})});
+  await f.run();let p=f.store.projection(f.id);expect(p.completedAt).toBeNull();
+  const card=p.actions[0]!;expect(card.kind).toBe('needs_input');expect(card.agent).toBe('codex');expect(card.actions).toEqual(['Retry collaboration','Cancel']);
+  expect(card.body).toContain('Codex returned a response that did not fit the required structure');expect(card.body).toContain('approved while still raising a material objection');expect(card.body).toContain('REVIEW_APPROVAL_WITH_MATERIAL_OBJECTION');expect(card.body).toContain('resumes at the first incomplete stage');
+  expect(calls.filter(c=>c.phase==='cross_review'&&c.role==='codex')).toHaveLength(2);expect(p.planning!.steps.filter(s=>s.phase==='output_rejected')).toHaveLength(1);
+  broken=false;await f.coordinator.decideAction(f.id,card.id,'Retry collaboration','');await settle(f);p=f.store.projection(f.id);
+  expect(p.state).toBe('completed_consensus');expect(calls.filter(c=>c.phase==='proposal')).toHaveLength(2);expect(calls).toHaveLength(9);f.store.close();
+ });
+ it('does not offer a retry for an unavailable explicit model selection',()=>{
+  expect(describePlanningFailure('PLANNING_MODEL_UNAVAILABLE:claude:opus-99. Start a new collaboration with an available model.','claude')).toContain('Start a new collaboration');
+  expect(describePlanningFailure('CLAUDE_SUBSCRIPTION_LIMIT_OR_OVERAGE',null)).toContain('subscription limit');
+  expect(describePlanningFailure('SOMETHING_NEW','codex')).toContain("during Codex's turn");
+  expect(repairHint('DOCUMENT_CONDITION_INVALID',['A condition.'],900)).toContain('"A condition."');
+ });
+});
 
 describe('third live trial regression',()=>{
  it('retains a self-contained plan with an uncited claim as explicitly unsupported rather than rejecting the entire answer',()=>{

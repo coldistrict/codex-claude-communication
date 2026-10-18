@@ -409,6 +409,7 @@ export class CodexAppServerClient {
     runId: string;
     prompt: string;
     systemPrompt?: string;
+    sessionTitle?: string;
     authorization: ModelAuthorization;
     threadId?: string;
     sandbox?: "read-only" | "workspace-write";
@@ -457,6 +458,7 @@ export class CodexAppServerClient {
         ? {
             developerInstructions: input.systemPrompt,
             config: {
+              ...(input.executionProfile === "planning" ? { project_doc_max_bytes: 0 } : {}),
               mcp_servers: this.advisorMcpServerOverrides,
               web_search: "disabled",
               features: Object.fromEntries(
@@ -471,6 +473,7 @@ export class CodexAppServerClient {
     });
     const threadId = String(threadResult?.thread?.id ?? input.threadId ?? "");
     if (!threadId) throw new Error("CODEX_THREAD_ID_MISSING");
+    if (input.sessionTitle) await this.request("thread/name/set", { threadId, name: input.sessionTitle });
     if (!advisor) {
       // The thread response is the authoritative statement of the selected
       // model and reasoning effort; surface it for live observability.

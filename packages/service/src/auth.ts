@@ -109,6 +109,6 @@ export function parseCookies(header: string | undefined): Record<string, string>
   );
 }
 
-export function sessionCookie(token: string, maxAgeSeconds: number): string {
-  return `collab_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSeconds}`;
+export function sessionCookie(token: string, maxAgeSeconds: number, name = 'collab_session'): string {
+  return `${name}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSeconds}`;
 }

@@ -77,7 +77,7 @@ try {
 
   // Narrow-viewport creation path is NOT covered by V-11; exercise it here.
   await page.setViewportSize({ width: 640, height: 1000 });
-  await page.getByRole("button", { name: "Create run" }).click();
+  await page.getByRole("button", { name: "New collaboration" }).click();
   await page.getByRole("heading", { name: "New collaboration" }).waitFor();
   const narrowCreate = join(outDir, "3-narrow-create-reopened.png");
   await page.screenshot({ path: narrowCreate, fullPage: true });

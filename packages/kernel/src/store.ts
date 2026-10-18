@@ -534,6 +534,7 @@ export class EventStore {
       if (!goal || goal.runId !== command.runId || goal.digest !== digest({
         goal: goal.goal,
         ...(goal.workflow ? { workflow: goal.workflow, projectContext: goal.projectContext ?? null } : {}),
+        ...(goal.planningModels ? { planningModels: goal.planningModels } : {}),
         workspace: goal.workspace,
         constraints: goal.constraints,
         ...(goal.attachments ? { attachments: goal.attachments } : {}),

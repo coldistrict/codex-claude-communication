@@ -8,3 +8,9 @@ artifacts/*.tmp
 # Local verification archives contain state backups and provider runtime logs.
 artifacts/planning-2026-09-04/
 artifacts/pr-2026-09-05/
+
+# Local credentials and generated run state stay off public remotes.
+.env
+.env.*
+!.env.example
+artifacts/
